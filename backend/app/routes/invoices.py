@@ -578,6 +578,14 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
         "business_address",
         default="",
     )
+    company_gst = get_optional_value(
+        user,
+        "gst_number",
+        "gstin",
+        "gst_no",
+        "GSTIN",
+        default="",
+    )
 
     client_name = get_optional_value(
         client,
@@ -604,6 +612,14 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
         client,
         "address",
         "billing_address",
+        default="",
+    )
+    client_gst = get_optional_value(
+        client,
+        "gst_number",
+        "gstin",
+        "gst_no",
+        "GSTIN",
         default="",
     )
 
@@ -679,6 +695,13 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
                 company_detail_style,
             )
         )
+    if company_gst:
+        company_lines.append(
+            Paragraph(
+                f"GSTIN: {safe(company_gst)}",
+                company_detail_style,
+            )
+        )
 
     # ========================================================
     # INVOICE INFORMATION
@@ -709,7 +732,7 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
 
         Paragraph(
             f"<b>Due Date:</b> "
-            f"{safe(format_date(invoice.due_date))}",
+            f"{safe(format_date(invoice.due_date))if invoice.due_date else 'No Due Date'}",
             invoice_meta_style,
         ),
 
@@ -730,19 +753,37 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
     # ========================================================
 
     # Logo + company details together
-    company_header = Table(
-        [
-            [
-                logo_element,
-                company_lines,
-            ]
-        ],
-        colWidths=[
-            40 * mm,   # logo
-            80 * mm,   # company details
-        ],
-    )
+    # ========================================================
+    # COMPANY HEADER
+    # ========================================================
 
+    if logo_path:
+
+        company_header = Table(
+            [
+                [
+                    logo_element,
+                    company_lines,
+                ]
+            ],
+            colWidths=[
+                40 * mm,
+                80 * mm,
+            ],
+        )
+
+    else:
+
+        company_header = Table(
+            [
+                [
+                    company_lines,
+                ]
+            ],
+            colWidths=[
+                120 * mm,
+            ],
+        )
     company_header.setStyle(
         TableStyle(
             [
@@ -883,6 +924,13 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
                 small_style,
             )
         )
+    if client_gst:
+        bill_to.append(
+            Paragraph(
+                f"GSTIN: {safe(client_gst)}",
+                small_style,
+            )
+        )
 
     bill_table = Table(
         [
@@ -971,7 +1019,7 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
             ),
 
             Paragraph(
-                "DESCRIPTION",
+                "Product / Service Name",
                 table_header_style,
             ),
 
@@ -986,12 +1034,12 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
             ),
 
             Paragraph(
-                "GST",
+                "GST %",
                 table_header_right_style,
             ),
 
             Paragraph(
-                "TAX",
+                "GST Amount",
                 table_header_right_style,
             ),
 
@@ -1229,7 +1277,7 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
                 total_label_style,
             ),
             Paragraph(
-                format_money(discount),
+                f"- {format_money(discount)}",
                 right_style,
             ),
         ],
@@ -1282,7 +1330,6 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
             ),
         ],
     ]
-
     totals_table = Table(
         totals_rows,
         colWidths=[
@@ -1290,6 +1337,7 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
             48 * mm,
             40 * mm,
         ],
+        hAlign="RIGHT",
     )
 
     totals_table.setStyle(
@@ -1831,6 +1879,7 @@ def create_invoice(
         user_id=current_user.id,
         client_id=client.id,
         invoice_number=invoice_data.invoice_number,
+        currency=invoice_data.currency,
         invoice_date=invoice_data.invoice_date,
         due_date=invoice_data.due_date,
         logo_url=current_user.logo_url,
@@ -3525,6 +3574,7 @@ def invoice_to_response(
 
         "invoice_number": invoice.invoice_number,
         "invoice_date": invoice.invoice_date,
+        "currency": invoice.currency,
         "due_date": invoice.due_date,
 
         "logo_url": invoice.logo_url,
