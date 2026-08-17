@@ -115,6 +115,15 @@ def create_token(data: dict) -> str:
     )
 
 
+def create_password_setup_token(email: str) -> str:
+    return create_token(
+        {
+            "sub": email,
+            "purpose": "password_setup",
+        }
+    )
+
+
 # ============================================================
 # AUTHENTICATION
 # ============================================================
