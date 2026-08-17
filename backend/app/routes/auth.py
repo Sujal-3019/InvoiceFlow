@@ -6,11 +6,13 @@ from google.oauth2 import id_token
 from google.auth.transport import requests
 from ..database import get_db
 from ..models import User
-from ..schemas import UserCreate, UserLogin
+from ..schemas import UserCreate, UserLogin , SetPassword
 from ..security import (
     hash_password,
     verify_password,
-    create_token
+    create_token,
+    get_current_user,
+    create_password_setup_token,
 )
 
 
@@ -44,13 +46,22 @@ def google_login(
             google_token,
             requests.Request(),
             GOOGLE_CLIENT_ID,
+            clock_skew_in_seconds=10,
         )
 
-    except ValueError:
+    except ValueError as e:
+        print("GOOGLE TOKEN VALIDATION ERROR:", repr(e))
+
         raise HTTPException(
             status_code=401,
             detail="Invalid Google token",
         )
+
+    google_user = id_token.verify_oauth2_token(
+        google_token,
+        requests.Request(),
+        GOOGLE_CLIENT_ID,
+    ) 
 
     google_id = google_user.get("sub")
     email = google_user.get("email")
@@ -62,14 +73,20 @@ def google_login(
             detail="Google account information is incomplete",
         )
 
-    # Find user using Google ID
+    # ========================================================
+    # 1. FIND USER BY GOOGLE ID
+    # ========================================================
+
     db_user = (
         db.query(User)
         .filter(User.google_id == google_id)
         .first()
     )
 
-    # If Google ID isn't linked yet, check email
+    # ========================================================
+    # 2. IF NOT FOUND, FIND USER BY EMAIL
+    # ========================================================
+
     if not db_user:
         db_user = (
             db.query(User)
@@ -77,16 +94,23 @@ def google_login(
             .first()
         )
 
-    # Existing user
+    # ========================================================
+    # 3. EXISTING USER
+    # ========================================================
+
     if db_user:
 
+        # Link Google account if not already linked
         if not db_user.google_id:
             db_user.google_id = google_id
 
         db.commit()
         db.refresh(db_user)
 
-    # New Google user
+    # ========================================================
+    # 4. NEW GOOGLE USER
+    # ========================================================
+
     else:
 
         db_user = User(
@@ -100,7 +124,33 @@ def google_login(
         db.commit()
         db.refresh(db_user)
 
-    # Create InvoiceFlow JWT
+    # ========================================================
+    # 5. CHECK WHETHER PASSWORD EXISTS
+    # ========================================================
+
+    if db_user.password is None:
+
+        setup_token = create_token(
+            {
+                "sub": db_user.email,
+                "purpose": "password_setup",
+            }
+        )
+
+        return {
+            "requires_password_setup": True,
+            "setup_token": setup_token,
+            "user": {
+                "id": db_user.id,
+                "name": db_user.name,
+                "email": db_user.email,
+            },
+        }
+
+    # ========================================================
+    # 6. PASSWORD ALREADY EXISTS
+    # ========================================================
+
     token = create_token(
         {
             "sub": db_user.email
@@ -108,12 +158,77 @@ def google_login(
     )
 
     return {
+        "requires_password_setup": False,
         "access_token": token,
         "token_type": "bearer",
         "user": {
             "id": db_user.id,
             "name": db_user.name,
             "email": db_user.email,
+        },
+    }
+
+@router.post("/set-password")
+def set_password(
+    data: SetPassword,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # ========================================================
+    # VALIDATE PASSWORD
+    # ========================================================
+
+    if len(data.password) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 8 characters",
+        )
+
+    if data.password != data.confirm_password:
+        raise HTTPException(
+            status_code=400,
+            detail="Passwords do not match",
+        )
+
+    # ========================================================
+    # CHECK IF PASSWORD ALREADY EXISTS
+    # ========================================================
+
+    if current_user.password:
+        raise HTTPException(
+            status_code=400,
+            detail="Password has already been set",
+        )
+
+    # ========================================================
+    # SAVE HASHED PASSWORD
+    # ========================================================
+
+    current_user.password = hash_password(
+        data.password
+    )
+
+    db.commit()
+    db.refresh(current_user)
+
+    # ========================================================
+    # CREATE NORMAL JWT
+    # ========================================================
+
+    token = create_token(
+        {
+            "sub": current_user.email
+        }
+    )
+
+    return {
+        "message": "Password created successfully",
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": current_user.id,
+            "name": current_user.name,
+            "email": current_user.email,
         },
     }
 
