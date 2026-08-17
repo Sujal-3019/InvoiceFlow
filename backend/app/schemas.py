@@ -21,6 +21,10 @@ class UserLogin(BaseModel):
     email: str
     password: str
 
+class SetPassword(BaseModel):
+    password: str
+    confirm_password: str
+
 class UserUpdate(BaseModel):
     # --------------------------------------------------------
     # ACCOUNT
@@ -367,8 +371,8 @@ class InvoiceCreate(BaseModel):
     client_id: int
     invoice_number: str
     invoice_date: date
+    currency: str = "INR"
     due_date: Optional[date] = None
-
     logo_url: Optional[str] = None
 
     discount: Decimal = Decimal("0")
@@ -423,6 +427,7 @@ class InvoiceResponse(BaseModel):
 
     invoice_number: str
     invoice_date: date
+    currency: str
     due_date: Optional[date] = None
 
     logo_url: Optional[str] = None
