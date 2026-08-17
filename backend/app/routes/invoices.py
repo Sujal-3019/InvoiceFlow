@@ -81,6 +81,7 @@ ALLOWED_PAYMENT_STATUSES = {
     "unpaid",
     "partial",
     "paid",
+    "overdue",
 }
 
 
@@ -127,6 +128,7 @@ def money(value: Decimal) -> Decimal:
 def calculate_payment_status(
     amount_paid: Decimal,
     grand_total: Decimal,
+    due_date=None,
 ):
     """
     Calculate amount due and payment status.
@@ -144,24 +146,28 @@ def calculate_payment_status(
     if amount_paid > grand_total:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "Paid amount cannot be greater than "
-                "the invoice total."
-            ),
+            detail="Paid amount cannot be greater than the invoice total.",
         )
-
-    if amount_paid == ZERO:
-        payment_status = "unpaid"
-
-    elif amount_paid < grand_total:
-        payment_status = "partial"
-
-    else:
-        payment_status = "paid"
 
     amount_due = money(
         grand_total - amount_paid
     )
+
+    # Fully paid
+    if amount_paid == grand_total:
+        payment_status = "paid"
+
+    # Payment is still pending
+    elif due_date is not None and due_date < datetime.now().date():
+        payment_status = "overdue"
+
+    # Partially paid but not overdue
+    elif amount_paid > ZERO:
+        payment_status = "partial"
+
+    # Not paid and not overdue
+    else:
+        payment_status = "unpaid"
 
     return (
         amount_paid,
@@ -3565,6 +3571,7 @@ def invoice_to_response(
     ) = calculate_payment_status(
         amount_paid,
         grand_total,
+        invoice.due_date,
     )
 
     return {
