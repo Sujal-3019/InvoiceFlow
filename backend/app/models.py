@@ -438,6 +438,11 @@ class Invoice(Base):
         Date,
         nullable=True,
     )
+    currency = Column(
+        String(3), 
+        nullable=False, 
+        default="INR"
+    )
 
     # ========================================================
     # LOGO SNAPSHOT REFERENCE
