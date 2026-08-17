@@ -15,10 +15,9 @@ import {
   FiUserPlus,
   FiX,
 } from 'react-icons/fi';
-
 import { api } from '../../utils/axiosInstance';
 import { useToast } from '../../context/ToastContext';
-
+import { useProfile } from "../../context/ProfileContext";
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Textarea from '../../components/ui/Textarea';
@@ -148,6 +147,7 @@ const initialNewClient = {
 const CreateInvoice = () => {
   const navigate = useNavigate();
   const { success, error } = useToast();
+  const { profile } = useProfile();
 
   const previewRef = useRef(null);
   const logoInputRef = useRef(null);
@@ -185,6 +185,27 @@ const CreateInvoice = () => {
   const [newClient, setNewClient] =
     useState(initialNewClient);
 
+  const [phoneCountry, setPhoneCountry] = useState("IN");
+  const [phoneError, setPhoneError] = useState("");
+
+  /* -------------------------------------------------------
+     add new product
+  ------------------------------------------------------- */
+
+  const initialNewProduct = {
+    name: '',
+    description: '',
+    price: '',
+    gst_percent: '18',
+  };
+
+  const [showProductDropdown, setShowProductDropdown] = useState(false);
+  const [showAddProductModal, setShowAddProductModal] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+  const [creatingProduct, setCreatingProduct] = useState(false);
+  const [newProduct, setNewProduct] = useState(initialNewProduct);
+  const [activeItemId, setActiveItemId] = useState(null);
+
   /* -------------------------------------------------------
      PREVIEW
   ------------------------------------------------------- */
@@ -216,6 +237,10 @@ const CreateInvoice = () => {
          */
         setFormData((prev) => ({
           ...prev,
+
+          currency:
+            profile.currency ||
+            prev.currency,
 
           company: {
             ...prev.company,
@@ -283,16 +308,6 @@ const CreateInvoice = () => {
         if (logo) {
           const backendLogoUrl =
             getBackendFileUrl(logo);
-
-          console.log(
-            'Profile logo from backend:',
-            logo
-          );
-
-          console.log(
-            'Profile logo URL for browser:',
-            backendLogoUrl
-          );
 
           setProfileLogoUrl(backendLogoUrl);
           setCompanyLogoUrl(backendLogoUrl);
@@ -858,6 +873,74 @@ const CreateInvoice = () => {
     }));
   };
 
+  /* =========================================================
+   PRODUCT DROPDOWN
+========================================================= */
+
+  const filteredProducts = products.filter((product) =>
+    product.name.toLowerCase().includes(productSearch.toLowerCase())
+  );
+
+  const openAddProductModal = (itemId) => {
+    setActiveItemId(itemId);
+    setShowProductDropdown(false);
+    setProductSearch('');
+    setShowAddProductModal(true);
+  };
+
+  const handleProductSelect = (itemId, product) => {
+    handleProductChange(itemId, product.id);
+    setShowProductDropdown(false);
+    setProductSearch('');
+  };
+
+  /* =========================================================
+     CREATE PRODUCT
+  ========================================================= */
+
+  const handleCreateProduct = async () => {
+    if (!newProduct.name.trim()) {
+      error('Product name is required');
+      return;
+    }
+
+    if (!newProduct.price) {
+      error('Product price is required');
+      return;
+    }
+
+    try {
+      setCreatingProduct(true);
+
+      const payload = {
+        name: newProduct.name.trim(),
+        description: newProduct.description.trim() || null,
+        price: Number(newProduct.price),
+        gst_percent: Number(newProduct.gst_percent),
+        is_active: true,
+      };
+
+      const response = await api.products.create(payload);
+      const createdProduct = response.data;
+
+      setProducts((prev) => [...prev, createdProduct]);
+
+      if (activeItemId) {
+        handleProductChange(activeItemId, createdProduct.id);
+      }
+
+      setNewProduct(initialNewProduct);
+      setShowAddProductModal(false);
+      setActiveItemId(null);
+
+      success('Product created successfully');
+    } catch (err) {
+      error(getApiErrorMessage(err, 'Failed to create product'));
+    } finally {
+      setCreatingProduct(false);
+    }
+  };
+
 
 
   /* =========================================================
@@ -988,6 +1071,8 @@ const CreateInvoice = () => {
 
         invoice_date:
           formData.invoiceDate,
+
+        currency: profile?.currency || "INR",
 
         due_date:
           formData.dueDate || null,
@@ -1148,7 +1233,7 @@ const CreateInvoice = () => {
             navigate('/invoices')
           }
           className="inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-primary transition-colors mb-4"
-        >
+         >
           <FiArrowLeft size={16} />
           Back to Invoices
         </button>
@@ -1202,6 +1287,89 @@ const CreateInvoice = () => {
 
         </div>
       </div>
+      {/* =====================================================
+          Add Product MODAL
+      ===================================================== */}
+
+      
+        <Modal
+          isOpen={showAddProductModal}
+          title="Add New Product"
+          onClose={() => setShowAddProductModal(false)}
+        >
+          <div className="space-y-4">
+
+            <Input
+              label="Product Name"
+              value={newProduct.name}
+              onChange={(e) =>
+                setNewProduct({
+                  ...newProduct,
+                  name: e.target.value,
+                })
+              }
+            />
+
+            <Textarea
+              label="Description"
+              rows={2}
+              value={newProduct.description}
+              onChange={(e) =>
+                setNewProduct({
+                  ...newProduct,
+                  description: e.target.value,
+                })
+              }
+            />
+
+            <div className="grid grid-cols-2 gap-4">
+
+              <Input
+                label="Price"
+                type="number"
+                value={newProduct.price}
+                onChange={(e) =>
+                  setNewProduct({
+                    ...newProduct,
+                    price: e.target.value,
+                  })
+                }
+              />
+
+              <Input
+                label="GST %"
+                type="number"
+                value={newProduct.gst_percent}
+                onChange={(e) =>
+                  setNewProduct({
+                    ...newProduct,
+                    gst_percent: e.target.value,
+                  })
+                }
+              />
+
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3">
+
+              <Button
+                variant="secondary"
+                onClick={() => setShowAddProductModal(false)}
+              >
+                Cancel
+              </Button>
+
+              <Button
+                loading={creatingProduct}
+                onClick={handleCreateProduct}
+              >
+                Add Product
+              </Button>
+
+            </div>
+
+          </div>
+        </Modal>
 
 
       {/* =====================================================
@@ -1289,41 +1457,19 @@ const CreateInvoice = () => {
               />
 
 
-              <Select
-                label="Currency"
-                value={
-                  formData.currency
-                }
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    currency:
-                      e.target.value,
-                  }))
-                }
-                options={[
-                  {
-                    value: 'INR',
-                    label: 'INR - Indian Rupee',
-                  },
-                  {
-                    value: 'USD',
-                    label: 'USD - US Dollar',
-                  },
-                  {
-                    value: 'EUR',
-                    label: 'EUR - Euro',
-                  },
-                  {
-                    value: 'GBP',
-                    label: 'GBP - British Pound',
-                  },
-                  {
-                    value: 'JPY',
-                    label: 'JPY - Japanese Yen',
-                  },
-                ]}
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Currency
+                </label>
+
+                <div className="h-[42px] rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-3 flex items-center text-sm font-medium text-gray-700 dark:text-gray-200">
+                  {formData.currency}
+                </div>
+
+                <p className="text-xs text-gray-400 mt-1">
+                  Currency is taken from your profile settings.
+                </p>
+              </div>
 
             </div>
 
@@ -2045,39 +2191,98 @@ const CreateInvoice = () => {
                             Product
                           </label>
 
-                          <Select
-                            value={
-                              item.productId
-                            }
-                            onChange={(e) =>
-                              handleProductChange(
-                                item.id,
-                                e.target.value
-                              )
-                            }
-                            options={[
-                              {
-                                value: '',
-                                label:
-                                  loadingData
-                                    ? 'Loading products...'
-                                    : 'Select product',
-                              },
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveItemId(item.id);
+                                setShowProductDropdown(
+                                  showProductDropdown === item.id ? null : item.id
+                                );
+                              }}
+                              className="w-full h-[42px] px-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 flex items-center justify-between text-left"
+                            >
+                              <span className="truncate">
+                                {products.find(
+                                  (p) => String(p.id) === String(item.productId)
+                                )?.name || 'Select product'}
+                              </span>
 
-                              ...products
-                                .filter(
-                                  (product) =>
-                                    product.is_active !== false
-                                )
-                                .map(
-                                  (product) => ({
-                                    value: String(product.id),
-                                    label: product.name,
-                                  })
-                                ),
+                              <FiChevronDown size={16} />
+                            </button>
 
-                            ]}
-                          />
+                            {showProductDropdown === item.id && (
+                              <div className="absolute z-50 mt-2 w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl overflow-hidden">
+
+                                {/* Search */}
+                                <div className="p-3 border-b border-gray-200 dark:border-gray-700">
+                                  <Input
+                                    placeholder="Search products..."
+                                    value={productSearch}
+                                    onChange={(e) => setProductSearch(e.target.value)}
+                                  />
+                                </div>
+
+                                {/* Add Product */}
+                                <button
+                                  type="button"
+                                  onClick={() => openAddProductModal(item.id)}
+                                  className="w-full px-4 py-3 flex items-center gap-3 text-left border-b border-gray-200 dark:border-gray-700 text-primary hover:bg-primary/5"
+                                >
+                                  <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
+                                    <FiPlus size={16} />
+                                  </div>
+
+                                  <div>
+                                    <p className="font-semibold text-sm">
+                                      Add New Product
+                                    </p>
+                                    <p className="text-xs text-gray-500">
+                                      Create without leaving this page
+                                    </p>
+                                  </div>
+                                </button>
+
+                                {/* Product List */}
+                                <div className="max-h-64 overflow-y-auto">
+                                  {filteredProducts.length === 0 ? (
+                                    <div className="p-5 text-center text-sm text-gray-500">
+                                      No products found
+                                    </div>
+                                  ) : (
+                                    filteredProducts.map((product) => (
+                                      <button
+                                        key={product.id}
+                                        type="button"
+                                        onClick={() =>
+                                          handleProductSelect(item.id, product)
+                                        }
+                                        className="w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 flex justify-between"
+                                      >
+                                        <div>
+                                          <p className="font-medium">
+                                            {product.name}
+                                          </p>
+                                          <p className="text-xs text-gray-500 mt-1">
+                                            {formatCurrency(
+                                              Number(product.price),
+                                              formData.currency
+                                            )}{' '}
+                                            • {product.gst_percent}% GST
+                                          </p>
+                                        </div>
+
+                                        {String(item.productId) ===
+                                          String(product.id) && (
+                                            <FiCheck className="text-primary" />
+                                          )}
+                                      </button>
+                                    ))
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
 
                         </div>
 
@@ -3121,8 +3326,7 @@ const CreateInvoice = () => {
 
         </div>
 
-      </Modal>
-
+      </Modal>  
 
       {/* =====================================================
           FULL PREVIEW MODAL
