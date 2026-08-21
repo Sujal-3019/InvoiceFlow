@@ -21,7 +21,7 @@ import { Toast } from './components/ui';
 // =========================================================
 
 import LandingPage from './pages/LandingPage/LandingPage';
-import Login from './pages/auth/Login';
+import Login from './pages/Auth/Login';
 import SignUp from './pages/auth/SignUp';
 import GooglePasswordSetup from './pages/auth/GooglePasswordSetup';
 import Dashboard from './pages/Dashboard/Dashboard';
@@ -34,7 +34,7 @@ import EditInvoice from './pages/Invoices/EditInvoice';
 import InvoiceDetails from './pages/Invoices/InvoiceDetails';
 
 import Clients from './pages/Clients/Clients';
-import ClientInvoices from './pages/clients/ClientInvoices';
+import ClientInvoices from './pages/Clients/ClientInvoices';
 
 import ProfilePage from './pages/Profile/ProfilePage';
 import CompanyManager from './components/company/CompanyManager';
