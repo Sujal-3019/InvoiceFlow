@@ -1,5 +1,43 @@
 import axios from 'axios';
 
+export const ACTIVE_COMPANY_STORAGE_KEY = 'activeCompanyId';
+
+export const getStoredActiveCompanyId = () =>
+  localStorage.getItem(ACTIVE_COMPANY_STORAGE_KEY);
+
+export const setStoredActiveCompanyId = (companyId) => {
+  if (!companyId) {
+    localStorage.removeItem(ACTIVE_COMPANY_STORAGE_KEY);
+    return;
+  }
+
+  localStorage.setItem(
+    ACTIVE_COMPANY_STORAGE_KEY,
+    String(companyId)
+  );
+};
+
+const COMPANY_SCOPED_PATHS = [
+  '/clients',
+  '/products',
+  '/invoices',
+  '/dashboard',
+];
+
+const shouldAttachCompanyId = (url = '') => {
+  if (!url) {
+    return false;
+  }
+
+  if (url.startsWith('/users/companies')) {
+    return false;
+  }
+
+  return COMPANY_SCOPED_PATHS.some((path) =>
+    url.startsWith(path)
+  );
+};
+
 // Create axios instance with default config
 const axiosInstance = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
@@ -16,6 +54,19 @@ axiosInstance.interceptors.request.use(
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    const activeCompanyId = getStoredActiveCompanyId();
+
+    if (
+      activeCompanyId &&
+      shouldAttachCompanyId(config.url)
+    ) {
+      config.params = {
+        ...config.params,
+        company_id:
+          config.params?.company_id || activeCompanyId,
+      };
     }
 
     // Add request timestamp for caching prevention
@@ -153,6 +204,9 @@ export const api = {
       formData.append('file', file, file.name);
 
       return api.post('/users/logo', formData, {
+        params: {
+          company_id: getStoredActiveCompanyId(),
+        },
         onUploadProgress: (progressEvent) => {
           if (!progressEvent.total) {
             return;
@@ -171,7 +225,11 @@ export const api = {
     },
 
     removeLogo: () =>
-      api.delete('/users/logo'),
+      api.delete('/users/logo', {
+        params: {
+          company_id: getStoredActiveCompanyId(),
+        },
+      }),
 
     changePassword: (data) =>
       api.put('/users/change-password', data),
@@ -190,6 +248,9 @@ export const api = {
       formData.append('file', file, file.name);
 
       return api.post('/users/logo', formData, {
+        params: {
+          company_id: getStoredActiveCompanyId(),
+        },
         onUploadProgress: (progressEvent) => {
           if (!progressEvent.total) {
             return;
@@ -208,7 +269,31 @@ export const api = {
     },
 
     removeLogo: () =>
-      api.delete('/users/logo'),
+      api.delete('/users/logo', {
+        params: {
+          company_id: getStoredActiveCompanyId(),
+        },
+      }),
+  },
+
+  companies: {
+    list: () =>
+      api.get('/users/companies'),
+
+    get: (id) =>
+      api.get(`/users/companies/${id}`),
+
+    create: (data) =>
+      api.post('/users/companies', data),
+
+    update: (id, data) =>
+      api.put(`/users/companies/${id}`, data),
+
+    delete: (id) =>
+      api.delete(`/users/companies/${id}`),
+
+    switch: (id) =>
+      api.post(`/users/companies/${id}/switch`),
   },
 
 

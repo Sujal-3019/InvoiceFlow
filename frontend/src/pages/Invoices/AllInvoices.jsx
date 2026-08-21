@@ -50,6 +50,12 @@ const mapInvoice = (invoice, clients = []) => {
 
     amount: Number(invoice.grand_total || 0),
 
+    // IMPORTANT: use currency stored on THIS invoice
+    currency:
+      invoice?.currency ||
+      invoice?.invoice_currency ||
+      "INR",
+
     status: invoice.status,
     paymentStatus: invoice.payment_status,
 
@@ -169,6 +175,20 @@ const AllInvoices = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (openActionMenu !== null) {
+        setOpenActionMenu(null);
+      }
+    };
+
+    document.addEventListener("click", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("click", handleClickOutside);
+    };
+  }, [openActionMenu]);
 
 
   // Filter and search invoices
@@ -425,7 +445,10 @@ Please find your invoice details below.
 Invoice Number: ${invoice.invoiceNumber}
 Invoice Date: ${invoice.date ? formatDate(invoice.date) : "-"}
 Due Date: ${invoice.dueDate ? formatDate(invoice.dueDate) : "-"}
-Amount: ${formatCurrency(invoice.amount, "USD")}
+Amount: ${formatCurrency(
+      invoice.amount,
+      invoice.currency
+    )}
 Payment Status: ${invoice.paymentStatus || "Unpaid"}
 
 Thank you for your business.
@@ -852,7 +875,7 @@ Your Company`;
                     </Table.Cell>
                     <Table.Cell>
                       <span className="font-semibold text-gray-900 dark:text-gray-100">
-                        {formatCurrency(invoice.amount, 'USD')}
+                        {formatCurrency(invoice.amount, invoice.currency)}
                       </span>
                     </Table.Cell>
                     <Table.Cell>
@@ -931,11 +954,13 @@ Your Company`;
                         {/* Chevron stays fixed */}
                         <button
                           type="button"
-                          onClick={() =>
+                          onClick={(e) => {
+                            e.stopPropagation();
+
                             setOpenActionMenu(
                               openActionMenu === invoice.id ? null : invoice.id
-                            )
-                          }
+                            );
+                          }}
                           title="Actions"
                           className={`relative z-50 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-all ${openActionMenu === invoice.id
                             ? 'bg-gray-100 dark:bg-gray-800'

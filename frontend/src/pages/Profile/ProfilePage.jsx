@@ -97,12 +97,6 @@ const ProfilePage = () => {
 
     registrationNumber: '',
 
-    bankName: '',
-    bankAccountName: '',
-    bankAccountNumber: '',
-    bankIfsc: '',
-    bankSwift: '',
-
     invoicePrefix: '',
     invoiceStartingNumber: '',
   });
@@ -126,68 +120,77 @@ const ProfilePage = () => {
       email: profile.email || user?.email || '',
       phone: profile.phone || '',
 
-      company: profile.company || profile.businessName || '',
-      businessName: profile.businessName || profile.company || '',
-      businessType: profile.businessType || '',
+      // Backend returns both company and business_name
+      company: profile.company || profile.business_name || '',
+      businessName: profile.business_name || profile.company || '',
+      businessType: profile.business_type || profile.businessType || '',
 
       website: profile.website || '',
       bio: profile.bio || '',
 
       logo:
-        profile.logo ||
-        profile.logoUrl ||
         profile.logo_url ||
+        profile.logoUrl ||
+        profile.logo ||
         '',
 
       address: profile.address || '',
       city: profile.city || '',
       state: profile.state || '',
-      zip: profile.zip || profile.postalCode || '',
+      zip: profile.zip || profile.postal_code || profile.postalCode || '',
       country: profile.country || '',
 
-      taxId: profile.taxId || '',
-      gstNumber: profile.gstNumber || '',
-      panNumber: profile.panNumber || '',
+      // IMPORTANT: API uses snake_case
+      taxId: profile.tax_id || profile.taxId || '',
+      gstNumber: profile.gst_number || profile.gstNumber || '',
+      panNumber: profile.pan_number || profile.panNumber || '',
 
-      registrationNumber: profile.registrationNumber || '',
+      registrationNumber:
+        profile.registration_number ||
+        profile.registrationNumber ||
+        '',
 
-      bankName: profile.bankName || '',
-      bankAccountName: profile.bankAccountName || '',
-      bankAccountNumber: profile.bankAccountNumber || '',
-      bankIfsc: profile.bankIfsc || '',
-      bankSwift: profile.bankSwift || '',
+      invoicePrefix:
+        profile.invoice_prefix ||
+        profile.invoicePrefix ||
+        '',
 
-      invoicePrefix: profile.invoicePrefix || '',
       invoiceStartingNumber:
-        profile.invoiceStartingNumber || '',
+        profile.invoice_starting_number ||
+        profile.invoiceStartingNumber ||
+        '',
     });
 
     setInvoiceDefaults({
       currency:
-        profile.invoiceDefaults?.currency ||
         profile.currency ||
+        profile.invoice_defaults?.currency ||
         'INR',
 
       paymentTerms:
+        profile.payment_terms ||
         profile.invoiceDefaults?.paymentTerms ||
-        profile.paymentTerms ||
         'Net 30',
 
+      // IMPORTANT: API uses invoice_notes
       notes:
-        profile.invoiceDefaults?.notes ||
+        profile.invoice_notes ||
         profile.invoiceNotes ||
+        profile.invoice_defaults?.notes ||
         '',
 
+      // IMPORTANT: API uses invoice_terms
       terms:
-        profile.invoiceDefaults?.terms ||
+        profile.invoice_terms ||
         profile.invoiceTerms ||
+        profile.invoice_defaults?.terms ||
         '',
     });
 
     const logo =
-      profile.logo ||
-      profile.logoUrl ||
       profile.logo_url ||
+      profile.logoUrl ||
+      profile.logo ||
       null;
 
     setLogoPreview(getLogoUrl(logo));
@@ -290,14 +293,40 @@ const ProfilePage = () => {
       // --------------------------------------------
 
       const dataToSave = {
-        ...profileData,
-        currency: invoiceDefaults.currency, 
-        paymentTerms: invoiceDefaults.paymentTerms, 
-        invoiceNotes: invoiceDefaults.notes, 
+        name: profileData.name,
+        email: profileData.email,
+
+        phone: profileData.phone,
+
+        businessName: profileData.businessName,
+        businessType: profileData.businessType,
+
+        website: profileData.website,
+        bio: profileData.bio,
+
+        address: profileData.address,
+        city: profileData.city,
+        state: profileData.state,
+        zip: profileData.zip,
+        country: profileData.country,
+
+        taxId: profileData.taxId,
+        gstNumber: profileData.gstNumber,
+        panNumber: profileData.panNumber,
+        registrationNumber: profileData.registrationNumber,
+
+        invoicePrefix: profileData.invoicePrefix,
+        invoiceStartingNumber:
+          profileData.invoiceStartingNumber,
+
+        currency: invoiceDefaults.currency,
+        paymentTerms: invoiceDefaults.paymentTerms,
+        invoiceNotes: invoiceDefaults.notes,
         invoiceTerms: invoiceDefaults.terms,
       };
 
       delete dataToSave.logoFile;
+
 
       const updatedProfile = await updateProfile(dataToSave);
 
@@ -493,9 +522,15 @@ const ProfilePage = () => {
                   <Input
                     label="Company Name"
                     value={profileData.businessName}
-                    onChange={(e) =>
-                      handleProfileChange('businessName', e.target.value)
-                    }
+                    onChange={(e) => {
+                      const value = e.target.value;
+
+                      setProfileData((prev) => ({
+                        ...prev,
+                        businessName: value,
+                        company: value,
+                      }));
+                    }}
                     leftIcon={<FiBriefcase size={18} />}
                     placeholder="Your business name"
                   />
@@ -902,16 +937,6 @@ const ProfilePage = () => {
 
                 <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate ml-4">
                   {profile?.email || user?.email || '—'}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-500 dark:text-gray-400">
-                  Account ID
-                </span>
-
-                <span className="text-xs font-mono text-gray-700 dark:text-gray-300 truncate ml-4">
-                  {user?.id || '—'}
                 </span>
               </div>
 

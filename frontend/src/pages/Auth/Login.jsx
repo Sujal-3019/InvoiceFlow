@@ -52,7 +52,7 @@ const Login = () => {
     try {
       await login(formData.email, formData.password);
       success('Login successful! Redirecting...');
-      setTimeout(() => navigate('/dashboard'), 1000);
+      setTimeout(() => navigate('/profile'), 1000);
     } catch (err) {
       error('Invalid email or password');
     } finally {
@@ -196,19 +196,31 @@ const Login = () => {
                     try {
                       setLoading(true);
 
-                      await googleLogin(
+                      const result = await googleLogin(
                         credentialResponse.credential
                       );
 
-                      success('Google sign-in successful!');
+                      if (result.requires_password_setup) {
+                        sessionStorage.setItem(
+                          'google_setup_token',
+                          result.setup_token
+                        );
 
-                      navigate('/dashboard');
+                        sessionStorage.setItem(
+                          'google_setup_user',
+                          JSON.stringify(result.user)
+                        );
+
+                        navigate('/google-password-setup');
+
+                        return;
+                      }
+
+                      success('Google sign-in successful!');
+                      navigate('/profile');
 
                     } catch (err) {
-                      console.error(
-                        'Google login error:',
-                        err
-                      );
+                      console.error('Google login error:', err);
 
                       error(
                         err?.response?.data?.detail ||

@@ -13,7 +13,7 @@ import { ToastProvider } from './context/ToastContext';
 import { ProfileProvider } from './context/ProfileContext';
 
 import { DashboardLayout } from './components/layout';
-import HomeRedirect  from './components/layout/HomeRedirect';
+import HomeRedirect from './components/layout/HomeRedirect';
 import { Toast } from './components/ui';
 
 // =========================================================
@@ -23,7 +23,7 @@ import { Toast } from './components/ui';
 import LandingPage from './pages/LandingPage/LandingPage';
 import Login from './pages/auth/Login';
 import SignUp from './pages/auth/SignUp';
-
+import GooglePasswordSetup from './pages/auth/GooglePasswordSetup';
 import Dashboard from './pages/Dashboard/Dashboard';
 
 import Products from './pages/Products/Products';
@@ -37,7 +37,7 @@ import Clients from './pages/Clients/Clients';
 import ClientInvoices from './pages/clients/ClientInvoices';
 
 import ProfilePage from './pages/Profile/ProfilePage';
-
+import CompanyManager from './components/company/CompanyManager';
 
 // =========================================================
 // PROTECTED ROUTE
@@ -55,7 +55,7 @@ const ProtectedRoute = ({ children }) => {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return children;
@@ -128,7 +128,7 @@ function AppRoutes() {
       />
 
       <Route
-        path="/landing"
+        path="/home"
         element={
           <PublicRoute>
             <LandingPage />
@@ -153,6 +153,33 @@ function AppRoutes() {
           </PublicRoute>
         }
       />
+
+      <Route
+        path="/google-password-setup"
+        element={
+          <PublicRoute>
+            <GooglePasswordSetup />
+          </PublicRoute>
+        }
+      />
+
+      {/* =====================================================
+          COMPANIES
+      ===================================================== */}
+
+      <Route
+        path="/companies"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route
+          index
+          element={<CompanyManager />}
+        />
+      </Route>
 
 
       {/* =====================================================

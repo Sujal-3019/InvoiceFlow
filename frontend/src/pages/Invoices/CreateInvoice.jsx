@@ -220,117 +220,91 @@ const CreateInvoice = () => {
   const [profileLogoUrl, setProfileLogoUrl] = useState('');
 
   useEffect(() => {
-    const loadCompanyProfile = async () => {
-      try {
-        setProfileLoading(true);
+    if (!profile) return;
 
-        const response = await api.profile.get();
+    setFormData((prev) => ({
+      ...prev,
 
-        const profile = response?.data;
+      currency:
+        profile.currency || prev.currency,
 
-        if (!profile) {
-          return;
-        }
+      company: {
+        ...prev.company,
 
-        /*
-         * Company information
-         */
-        setFormData((prev) => ({
-          ...prev,
+        name:
+          profile.business_name ||
+          profile.businessName ||
+          profile.company ||
+          prev.company.name,
 
-          currency:
-            profile.currency ||
-            prev.currency,
+        email:
+          profile.email ||
+          prev.company.email,
 
-          company: {
-            ...prev.company,
+        phone:
+          profile.phone ||
+          prev.company.phone,
 
-            name:
-              profile.businessName ||
-              profile.company ||
-              prev.company.name,
+        address:
+          profile.address ||
+          prev.company.address,
 
-            email:
-              profile.email ||
-              prev.company.email,
+        city:
+          profile.city ||
+          prev.company.city,
 
-            phone:
-              profile.phone ||
-              prev.company.phone,
+        state:
+          profile.state ||
+          prev.company.state,
 
-            address:
-              profile.address ||
-              prev.company.address,
+        zip:
+          profile.zip ||
+          prev.company.zip,
 
-            city:
-              profile.city ||
-              prev.company.city,
+        country:
+          profile.country ||
+          prev.company.country,
 
-            state:
-              profile.state ||
-              prev.company.state,
+        taxId:
+          profile.gstNumber ||
+          profile.gst_number ||
+          profile.taxId ||
+          prev.company.taxId,
+      },
 
-            zip:
-              profile.zip ||
-              prev.company.zip,
+      notes:
+        profile.invoiceNotes ||
+        profile.invoice_notes ||
+        prev.notes,
 
-            country:
-              profile.country ||
-              prev.company.country,
+      terms:
+        profile.invoiceTerms ||
+        profile.invoice_terms ||
+        prev.terms,
+    }));
+  }, [profile]);
 
-            taxId:
-              profile.gstNumber ||
-              profile.taxId ||
-              prev.company.taxId,
-          },
+  useEffect(() => {
+    if (!profile) return;
 
-          notes:
-            profile.invoiceNotes ||
-            prev.notes,
+    const logo =
+      profile.business_logo ||
+      profile.businessLogo ||
+      profile.logo_url ||
+      profile.logoUrl ||
+      profile.company_logo ||
+      profile.companyLogo ||
+      profile.logo;
 
-          terms:
-            profile.invoiceTerms ||
-            prev.terms,
-        }));
+    if (!logo) {
+      setCompanyLogoUrl('');
+      return;
+    }
 
-        /*
-         * Existing company/business logo
-         *
-         * Adjust these property names if your backend
-         * returns the logo under a different field.
-         */
-        const logo =
-          profile.business_logo ||
-          profile.company_logo ||
-          profile.logo_url ||
-          profile.logo;
+    const logoUrl = getBackendFileUrl(logo);
 
-        if (logo) {
-          const backendLogoUrl =
-            getBackendFileUrl(logo);
-
-          setProfileLogoUrl(backendLogoUrl);
-          setCompanyLogoUrl(backendLogoUrl);
-        }
-      } catch (err) {
-        console.error(
-          'Failed to load company profile:',
-          err
-        );
-
-        error(
-          getApiErrorMessage(
-            err,
-            'Failed to load company profile'
-          )
-        );
-      } finally {
-        setProfileLoading(false);
-      }
-    };
-
-    loadCompanyProfile();
-  }, [error]);
+    setCompanyLogoUrl(logoUrl);
+  }, [profile]);
 
   useEffect(() => {
     const loadNextInvoiceNumber = async () => {
@@ -442,6 +416,7 @@ const CreateInvoice = () => {
     ----------------------------------------------- */
 
     discount: 0,
+    discountType: 'fixed',
 
     notes: '',
 
@@ -923,19 +898,47 @@ const CreateInvoice = () => {
       const response = await api.products.create(payload);
       const createdProduct = response.data;
 
+      // Add the newly created product to the products list
       setProducts((prev) => [...prev, createdProduct]);
 
+      // Automatically select the newly created product
+      // AND directly use its price and GST values.
       if (activeItemId) {
-        handleProductChange(activeItemId, createdProduct.id);
+        setFormData((prev) => ({
+          ...prev,
+          items: prev.items.map((item) => {
+            if (item.id !== activeItemId) {
+              return item;
+            }
+
+            return {
+              ...item,
+              productId: createdProduct.id,
+              unitPrice: Number(createdProduct.price) || 0,
+              tax: Number(createdProduct.gst_percent) || 0,
+            };
+          }),
+        }));
       }
 
+      // Reset modal
       setNewProduct(initialNewProduct);
       setShowAddProductModal(false);
       setActiveItemId(null);
+      setProductSearch('');
+      setShowProductDropdown(false);
 
       success('Product created successfully');
+
     } catch (err) {
-      error(getApiErrorMessage(err, 'Failed to create product'));
+      console.error('Create product error:', err);
+
+      error(
+        getApiErrorMessage(
+          err,
+          'Failed to create product'
+        )
+      );
     } finally {
       setCreatingProduct(false);
     }
@@ -951,12 +954,13 @@ const CreateInvoice = () => {
     return calculateInvoiceTotals(
       formData.items,
       formData.discount,
-      'fixed',
+      formData.discountType,
       0
     );
   }, [
     formData.items,
     formData.discount,
+    formData.discountType,
   ]);
 
 
@@ -1233,7 +1237,7 @@ const CreateInvoice = () => {
             navigate('/invoices')
           }
           className="inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-primary transition-colors mb-4"
-         >
+        >
           <FiArrowLeft size={16} />
           Back to Invoices
         </button>
@@ -1291,85 +1295,85 @@ const CreateInvoice = () => {
           Add Product MODAL
       ===================================================== */}
 
-      
-        <Modal
-          isOpen={showAddProductModal}
-          title="Add New Product"
-          onClose={() => setShowAddProductModal(false)}
-        >
-          <div className="space-y-4">
+
+      <Modal
+        isOpen={showAddProductModal}
+        title="Add New Product"
+        onClose={() => setShowAddProductModal(false)}
+      >
+        <div className="space-y-4">
+
+          <Input
+            label="Product Name"
+            value={newProduct.name}
+            onChange={(e) =>
+              setNewProduct({
+                ...newProduct,
+                name: e.target.value,
+              })
+            }
+          />
+
+          <Textarea
+            label="Description"
+            rows={2}
+            value={newProduct.description}
+            onChange={(e) =>
+              setNewProduct({
+                ...newProduct,
+                description: e.target.value,
+              })
+            }
+          />
+
+          <div className="grid grid-cols-2 gap-4">
 
             <Input
-              label="Product Name"
-              value={newProduct.name}
+              label="Price"
+              type="number"
+              value={newProduct.price}
               onChange={(e) =>
                 setNewProduct({
                   ...newProduct,
-                  name: e.target.value,
+                  price: e.target.value,
                 })
               }
             />
 
-            <Textarea
-              label="Description"
-              rows={2}
-              value={newProduct.description}
+            <Input
+              label="GST %"
+              type="number"
+              value={newProduct.gst_percent}
               onChange={(e) =>
                 setNewProduct({
                   ...newProduct,
-                  description: e.target.value,
+                  gst_percent: e.target.value,
                 })
               }
             />
-
-            <div className="grid grid-cols-2 gap-4">
-
-              <Input
-                label="Price"
-                type="number"
-                value={newProduct.price}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    price: e.target.value,
-                  })
-                }
-              />
-
-              <Input
-                label="GST %"
-                type="number"
-                value={newProduct.gst_percent}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    gst_percent: e.target.value,
-                  })
-                }
-              />
-
-            </div>
-
-            <div className="flex justify-end gap-3 pt-3">
-
-              <Button
-                variant="secondary"
-                onClick={() => setShowAddProductModal(false)}
-              >
-                Cancel
-              </Button>
-
-              <Button
-                loading={creatingProduct}
-                onClick={handleCreateProduct}
-              >
-                Add Product
-              </Button>
-
-            </div>
 
           </div>
-        </Modal>
+
+          <div className="flex justify-end gap-3 pt-3">
+
+            <Button
+              variant="secondary"
+              onClick={() => setShowAddProductModal(false)}
+            >
+              Cancel
+            </Button>
+
+            <Button
+              loading={creatingProduct}
+              onClick={handleCreateProduct}
+            >
+              Add Product
+            </Button>
+
+          </div>
+
+        </div>
+      </Modal>
 
 
       {/* =====================================================
@@ -2543,29 +2547,43 @@ const CreateInvoice = () => {
                     Discount
                   </label>
 
-                  <div className="w-32">
+                  <div className="flex items-center gap-2">
 
-                    <Input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={
-                        formData.discount
-                      }
+                    <select
+                      value={formData.discountType}
                       onChange={(e) =>
-                        setFormData(
-                          (prev) => ({
-                            ...prev,
-                            discount:
-                              Math.max(
-                                0,
-                                Number(
-                                  e.target.value
-                                ) || 0
-                              ),
-                          })
-                        )
+                        setFormData((prev) => ({
+                          ...prev,
+                          discountType: e.target.value,
+                          discount: 0,
+                        }))
                       }
+                      className="h-[42px] rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 text-sm"
+                    >
+                      <option value="fixed">₹</option>
+                      <option value="percentage">%</option>
+                    </select>
+
+                    <input
+                      type="number"
+                      min={0}
+                      max={formData.discountType === "percentage" ? 100 : undefined}
+                      value={formData.discount}
+                      onChange={(e) => {
+                        let value = Number(e.target.value);
+
+                        if (formData.discountType === "percentage") {
+                          value = Math.min(100, Math.max(0, value));
+                        } else {
+                          value = Math.max(0, value);
+                        }
+
+                        setFormData((prev) => ({
+                          ...prev,
+                          discount: value,
+                        }));
+                      }}
+                      className="h-[42px] w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                     />
 
                   </div>
@@ -2620,7 +2638,13 @@ const CreateInvoice = () => {
                   </span>
 
                   <span className="text-sm font-medium text-red-500">
-                    ₹{Math.max(0, totals.total - (Number(amountPaid) || 0)).toFixed(2)}
+                    {formatCurrency(
+                      Math.max(
+                        0,
+                        totals.total - (Number(amountPaid) || 0)
+                      ),
+                      formData.currency
+                    )}
                   </span>
                 </div>
 
@@ -3326,7 +3350,7 @@ const CreateInvoice = () => {
 
         </div>
 
-      </Modal>  
+      </Modal>
 
       {/* =====================================================
           FULL PREVIEW MODAL

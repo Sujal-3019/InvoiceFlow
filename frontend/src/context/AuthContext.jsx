@@ -110,26 +110,24 @@ export const AuthProvider = ({ children }) => {
   // ============================================================
 
   const googleLogin = async (googleToken) => {
-    const response = await api.auth.googleLogin(
-      googleToken
-    );
+  const response = await api.auth.googleLogin(googleToken);
 
-    const { user, access_token } = response.data;
+  const data = response.data;
 
-    localStorage.setItem(
-      'token',
-      access_token
-    );
+  // Google account needs password setup
+  if (data.requires_password_setup) {
+    return data;
+  }
 
-    localStorage.setItem(
-      'user',
-      JSON.stringify(user)
-    );
+  const { user, access_token } = data;
 
-    setUser(user);
+  localStorage.setItem('token', access_token);
+  localStorage.setItem('user', JSON.stringify(user));
 
-    return user;
-  };
+  setUser(user);
+
+  return data;
+};
 
   // ============================================================
   // REGISTER

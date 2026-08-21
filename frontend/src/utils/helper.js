@@ -34,28 +34,84 @@ export const formatDateForInput = (date) => {
 };
 
 // Calculate invoice totals
-export const calculateInvoiceTotals = (items, discount, discountType, shipping) => {
+export const calculateInvoiceTotals = (
+  items,
+  discount,
+  discountType,
+  shipping
+) => {
+  // 1. Calculate subtotal
   const subtotal = items.reduce((sum, item) => {
-    return sum + (item.quantity * item.unitPrice);
+    const quantity = Number(item.quantity) || 0;
+    const unitPrice = Number(item.unitPrice) || 0;
+
+    return sum + quantity * unitPrice;
   }, 0);
-  
-  const taxTotal = items.reduce((sum, item) => {
-    return sum + (item.quantity * item.unitPrice * (item.tax / 100));
-  }, 0);
-  
+
+  // 2. Calculate discount
   let discountAmount = 0;
+
   if (discountType === 'percentage') {
-    discountAmount = subtotal * (discount / 100);
+    discountAmount =
+      subtotal * ((Number(discount) || 0) / 100);
   } else {
-    discountAmount = discount;
+    discountAmount = Number(discount) || 0;
   }
-  
-  const total = subtotal + taxTotal - discountAmount + (shipping || 0);
-  
+
+  // Prevent discount from exceeding subtotal
+  discountAmount = Math.min(
+    discountAmount,
+    subtotal
+  );
+
+  // 3. Calculate taxable amount AFTER discount
+  const taxableAmount =
+    subtotal - discountAmount;
+
+  // 4. Calculate GST on discounted amount
+  //
+  // Important:
+  // Discount is distributed proportionally
+  // across items so each item's GST is reduced.
+  const discountRatio =
+    subtotal > 0
+      ? taxableAmount / subtotal
+      : 0;
+
+  const taxTotal = items.reduce((sum, item) => {
+    const quantity = Number(item.quantity) || 0;
+    const unitPrice = Number(item.unitPrice) || 0;
+    const taxRate = Number(item.tax) || 0;
+
+    const itemSubtotal =
+      quantity * unitPrice;
+
+    const discountedItemSubtotal =
+      itemSubtotal * discountRatio;
+
+    const itemTax =
+      discountedItemSubtotal *
+      (taxRate / 100);
+
+    return sum + itemTax;
+  }, 0);
+
+  // 5. Shipping
+  const shippingAmount =
+    Number(shipping) || 0;
+
+  // 6. Final total
+  const total =
+    taxableAmount +
+    taxTotal +
+    shippingAmount;
+
   return {
     subtotal,
-    tax: taxTotal,
     discount: discountAmount,
+    taxableAmount,
+    tax: taxTotal,
+    shipping: shippingAmount,
     total,
   };
 };
@@ -90,12 +146,12 @@ export const getRelativeTime = (dateString) => {
   const date = new Date(dateString);
   const now = new Date();
   const diffInSeconds = Math.floor((now - date) / 1000);
-  
+
   if (diffInSeconds < 60) return 'just now';
   if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`;
   if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
   if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)} days ago`;
-  
+
   return formatDate(dateString);
 };
 
@@ -171,7 +227,7 @@ export const sortBy = (array, key, direction = 'asc') => {
   return [...array].sort((a, b) => {
     const aVal = typeof key === 'function' ? key(a) : a[key];
     const bVal = typeof key === 'function' ? key(b) : b[key];
-    
+
     if (aVal < bVal) return direction === 'asc' ? -1 : 1;
     if (aVal > bVal) return direction === 'asc' ? 1 : -1;
     return 0;
@@ -182,7 +238,7 @@ export const sortBy = (array, key, direction = 'asc') => {
 export const filterBySearch = (array, query, keys) => {
   if (!query) return array;
   const lowerQuery = query.toLowerCase();
-  return array.filter(item => 
+  return array.filter(item =>
     keys.some(key => {
       const value = item[key];
       return value && value.toString().toLowerCase().includes(lowerQuery);

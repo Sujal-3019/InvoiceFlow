@@ -24,6 +24,7 @@ import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
 import Avatar from "../../components/ui/Avatar";
+import Products from "../Products/Products";
 
 /* =========================================================
    API URL
@@ -105,17 +106,42 @@ const formatDate = (date) => {
    CURRENCY
 ========================================================= */
 
+const CURRENCY_SYMBOLS = {
+  INR: "₹",
+  USD: "$",
+  EUR: "€",
+  GBP: "£",
+  CAD: "C$",
+  AUD: "A$",
+  SGD: "S$",
+  AED: "د.إ",
+  SAR: "﷼",
+  JPY: "¥",
+  CNY: "¥",
+};
+
 const formatCurrency = (amount, currency = "INR") => {
   const value = Number(amount) || 0;
+  const code = String(currency || "INR").toUpperCase();
 
+  const symbol = CURRENCY_SYMBOLS[code];
+
+  if (symbol) {
+    return `${symbol}${value.toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+
+  // Fallback for currencies not defined above
   try {
     return new Intl.NumberFormat("en-IN", {
       style: "currency",
-      currency: currency || "INR",
+      currency: code,
       maximumFractionDigits: 2,
     }).format(value);
   } catch {
-    return `${currency || "INR"} ${value.toFixed(2)}`;
+    return `${code} ${value.toFixed(2)}`;
   }
 };
 
@@ -415,8 +441,8 @@ const normalizeItems = (invoice) => {
       id: item.id || index,
 
       description: firstValue(
-        item.description,
         item.name,
+        item.description,
         item.item_name,
         item.title,
         "Item"
@@ -439,7 +465,7 @@ const normalizeItems = (invoice) => {
    NORMALIZE INVOICE
 ========================================================= */
 
-const normalizeInvoice = (invoice) => {
+const normalizeInvoice = (invoice, profile) => {
   const currency = firstValue(
     invoice?.currency,
     invoice?.invoice_currency,
@@ -619,6 +645,7 @@ const getPaymentStatus = (invoice) => {
     };
   }
 
+  // Fully paid
   if (amountPaid >= total) {
     return {
       label: "Paid",
@@ -628,6 +655,7 @@ const getPaymentStatus = (invoice) => {
     };
   }
 
+  // Partially paid
   if (amountPaid > 0) {
     return {
       label: "Partially Paid",
@@ -635,6 +663,25 @@ const getPaymentStatus = (invoice) => {
       color: "text-yellow-700",
       bg: "bg-yellow-50",
     };
+  }
+
+  // Check due date
+  if (invoice?.dueDate) {
+    const today = new Date();
+    const dueDate = new Date(invoice.dueDate);
+
+    // Remove time from both dates
+    today.setHours(0, 0, 0, 0);
+    dueDate.setHours(0, 0, 0, 0);
+
+    if (dueDate < today && amountLeftToPay > 0) {
+      return {
+        label: "Overdue",
+        variant: "danger",
+        color: "text-red-700",
+        bg: "bg-red-50",
+      };
+    }
   }
 
   return {
@@ -715,7 +762,7 @@ const InvoiceDetails = () => {
           return;
         }
 
-        const normalized = normalizeInvoice(rawInvoice);
+        const normalized = normalizeInvoice(rawInvoice, profile);
 
         const normalizedBusiness = normalizeBusiness(
           rawInvoice,
@@ -1381,7 +1428,6 @@ const InvoiceDetails = () => {
 
                 {client?.gstNumber && (
                   <p className="text-sm text-gray-500 flex items-center gap-2">
-                    <FiHash size={14} />
                     GST: {client.gstNumber}
                   </p>
                 )}
@@ -1489,7 +1535,7 @@ const InvoiceDetails = () => {
                 <tr className="border-y border-gray-200 dark:border-gray-700">
 
                   <th className="text-left py-4 px-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    #
+                    S.No.
                   </th>
 
                   <th className="text-left py-4 px-3 text-xs font-semibold uppercase tracking-wide text-gray-500">

@@ -16,11 +16,11 @@ const HomeRedirect = () => {
 
   // Logged-in user → Dashboard
   if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/profile" replace />;
   }
 
   // Logged-out user → Landing Page
-  return <Navigate to="/landing" replace />;
+  return <Navigate to="/home" replace />;
 };
 
 export default HomeRedirect;

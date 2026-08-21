@@ -9,10 +9,15 @@ import {
   FiChevronDown,
   FiUser,
   FiLogOut,
+  FiCheck,
+  FiBriefcase,
+  FiPlus,
 } from "react-icons/fi";
 
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
+import { useProfile } from "../../context/ProfileContext";
+
 import Avatar from "../ui/Avatar";
 import Dropdown from "../ui/Dropdown";
 import SearchBar from "../ui/SearchBar";
@@ -21,13 +26,24 @@ const Navbar = ({ onMenuClick }) => {
   const { theme, toggleTheme } = useTheme();
 
   const navigate = useNavigate();
+
   const { user, logout } = useAuth();
+
+  const {
+    companies,
+    activeCompany,
+    activeCompanyId,
+    setActiveCompany,
+  } = useProfile();
 
   // =========================================================
   // SEARCH STATE
   // =========================================================
 
   const [searchQuery, setSearchQuery] = useState("");
+
+  const [switchingCompany, setSwitchingCompany] =
+    useState(false);
 
   // =========================================================
   // SEARCH HANDLER
@@ -47,6 +63,46 @@ const Navbar = ({ onMenuClick }) => {
     }
   };
 
+  // =========================================================
+  // COMPANY SWITCH
+  // =========================================================
+
+  const handleCompanySwitch = async (companyId) => {
+    if (
+      String(companyId) ===
+      String(activeCompanyId)
+    ) {
+      return;
+    }
+
+    try {
+      setSwitchingCompany(true);
+
+      await setActiveCompany(companyId);
+
+      // Reload current page so company-scoped
+      // data is fetched again using the new company ID.
+      window.location.reload();
+
+    } catch (error) {
+      console.error(
+        "Failed to switch company:",
+        error
+      );
+    } finally {
+      setSwitchingCompany(false);
+    }
+  };
+
+  // =========================================================
+  // LOGOUT
+  // =========================================================
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
+
   return (
     <header className="sticky top-0 z-30 bg-white/80 dark:bg-dark-card/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-800">
 
@@ -59,6 +115,7 @@ const Navbar = ({ onMenuClick }) => {
         <div className="flex items-center gap-4">
 
           {/* Mobile Menu Button */}
+
           <button
             onClick={onMenuClick}
             className="lg:hidden p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors"
@@ -106,6 +163,99 @@ const Navbar = ({ onMenuClick }) => {
 
 
           {/* =================================================
+              COMPANY SWITCHER
+          ================================================= */}
+
+          <Dropdown
+            trigger={
+              <button className="hidden md:flex items-center gap-2 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">
+
+                <FiBriefcase size={17} />
+
+                <span className="text-sm font-medium max-w-[180px] truncate">
+                  {activeCompany?.business_name ||
+                    activeCompany?.businessName ||
+                    activeCompany?.company ||
+                    "Select Company"}
+                </span>
+
+                <FiChevronDown size={15} />
+              </button>
+            }
+            align="right"
+            width="md">
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Your Companies
+              </p>
+            </div>
+
+            {companies.length > 0 ? (
+              companies.map((company) => {
+                const companyName =
+                  company.business_name ||
+                  company.businessName ||
+                  company.company ||
+                  "Unnamed Company";
+
+                const isActive =
+                  String(company.id) === String(activeCompanyId);
+
+                return (
+                  <Dropdown.Item
+                    key={company.id}
+                    icon={
+                      <FiBriefcase
+                        size={16}
+                        className={
+                          isActive
+                            ? "text-primary"
+                            : "text-gray-400"
+                        }
+                      />
+                    }
+                    onClick={() => {
+                      handleCompanySwitch(company.id);
+                    }}
+                    className={
+                      isActive
+                        ? "bg-primary/10 text-primary"
+                        : ""
+                    }
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="truncate">
+                        {companyName}
+                      </span>
+
+                      {isActive && (
+                        <span className="text-xs font-semibold text-primary ml-2">
+                          Active
+                        </span>
+                      )}
+                    </div>
+                  </Dropdown.Item>
+                );
+              })
+            ) : (
+              <div className="px-4 py-4 text-sm text-gray-500 dark:text-gray-400">
+                No companies found.
+              </div>
+            )}
+
+            <Dropdown.Divider />
+
+            <Dropdown.Item
+              icon={<FiBriefcase size={16} />}
+              onClick={() => navigate("/companies")}
+            >
+              Add / Manage Companies
+            </Dropdown.Item>
+
+          </Dropdown>
+
+
+          {/* =================================================
               THEME TOGGLE
           ================================================= */}
 
@@ -124,7 +274,7 @@ const Navbar = ({ onMenuClick }) => {
 
 
           {/* =================================================
-              USER MENU
+              USER / COMPANY MENU
           ================================================= */}
 
           <Dropdown
@@ -132,13 +282,15 @@ const Navbar = ({ onMenuClick }) => {
               <button className="flex items-center gap-3 p-1.5 pr-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">
 
                 {/* User Avatar */}
+
                 <Avatar
                   name={user?.name}
                   size="sm"
                 />
 
 
-                {/* User Name & Company */}
+                {/* User + Active Company */}
+
                 <div className="hidden sm:flex flex-col items-start min-w-0">
 
                   <span className="text-sm font-medium truncate max-w-[160px]">
@@ -146,8 +298,9 @@ const Navbar = ({ onMenuClick }) => {
                   </span>
 
                   <span className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[160px]">
-                    {user?.businessName ||
-                      user?.company ||
+                    {activeCompany?.business_name ||
+                      activeCompany?.company ||
+
                       "Company"}
                   </span>
 
@@ -160,10 +313,13 @@ const Navbar = ({ onMenuClick }) => {
             }
 
             align="right"
-            width="sm"
+            width="md"
           >
 
-            {/* User Information */}
+            {/* =================================================
+                ACCOUNT INFORMATION
+            ================================================= */}
+
             <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
 
               <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">
@@ -171,19 +327,153 @@ const Navbar = ({ onMenuClick }) => {
               </p>
 
               <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-1">
-                {user?.businessName ||
-                  user?.company ||
-                  "Company"}
-              </p>
-
-              <p className="text-xs text-gray-400 dark:text-gray-500 truncate mt-1">
                 {user?.email || ""}
               </p>
 
             </div>
 
 
-            {/* Profile */}
+            {/* =================================================
+                COMPANY SWITCHER
+            ================================================= */}
+
+            <div className="px-4 pt-3 pb-2">
+
+              <div className="flex items-center justify-between mb-2">
+
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Companies
+                </p>
+
+              </div>
+
+
+              <div className="space-y-1 max-h-60 overflow-y-auto">
+
+                {companies.length === 0 ? (
+
+                  <p className="text-sm text-gray-500 dark:text-gray-400 px-2 py-2">
+                    No companies found
+                  </p>
+
+                ) : (
+
+                  companies.map((company) => {
+
+                    const isActive =
+                      String(company.id) ===
+                      String(activeCompanyId);
+
+                    return (
+                      <button
+                        key={company.id}
+                        type="button"
+                        disabled={switchingCompany}
+                        onClick={() =>
+                          handleCompanySwitch(
+                            company.id
+                          )
+                        }
+                        className={`
+                          w-full flex items-center justify-between
+                          px-3 py-2.5 rounded-lg
+                          text-left
+                          transition-colors
+                          ${isActive
+                            ? "bg-primary/10 text-primary"
+                            : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                          }
+                          ${switchingCompany
+                            ? "opacity-60 cursor-wait"
+                            : ""
+                          }
+                        `}
+                      >
+
+                        <div className="flex items-center gap-3 min-w-0">
+
+                          {/* Company Avatar */}
+
+                          <div
+                            className={`
+                              w-8 h-8 rounded-lg
+                              flex items-center justify-center
+                              flex-shrink-0
+                              ${isActive
+                                ? "bg-primary text-white"
+                                : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300"
+                              }
+                            `}
+                          >
+                            <span className="text-xs font-semibold">
+                              {(
+                                company.company ||
+                                company.business_name ||
+                                "C"
+                              )
+                                .charAt(0)
+                                .toUpperCase()}
+                            </span>
+                          </div>
+
+
+                          {/* Company Name */}
+
+                          <div className="min-w-0">
+
+                            <p className="text-sm font-medium truncate">
+                              {company.company ||
+                                company.business_name ||
+                                "Unnamed Company"}
+                            </p>
+
+                            {company.business_name &&
+                              company.company &&
+                              company.business_name !==
+                              company.company && (
+                                <p className="text-xs text-gray-400 truncate">
+                                  {company.business_name}
+                                </p>
+                              )}
+
+                          </div>
+
+                        </div>
+
+
+                        {/* Active Check */}
+
+                        {isActive && (
+                          <FiCheck
+                            size={17}
+                            className="flex-shrink-0 ml-2"
+                          />
+                        )}
+
+                      </button>
+                    );
+                  })
+                )}
+
+              </div>
+
+            </div>
+
+
+            {/* Company Management */}
+            <Dropdown.Item
+              icon={<FiBriefcase size={16} />}
+              onClick={() => navigate("/companies")}
+            >
+              Add / Manage Companies
+            </Dropdown.Item>
+
+
+
+            {/* =================================================
+                PROFILE
+            ================================================= */}
+
             <Dropdown.Item
               icon={<FiUser size={16} />}
               onClick={() => navigate("/profile")}
@@ -192,14 +482,14 @@ const Navbar = ({ onMenuClick }) => {
             </Dropdown.Item>
 
 
-            {/* Logout */}
+            {/* =================================================
+                LOGOUT
+            ================================================= */}
+
             <Dropdown.Item
               icon={<FiLogOut size={16} />}
               className="text-red-600 dark:text-red-400"
-              onClick={() => {
-                logout();
-                navigate("/login");
-              }}
+              onClick={handleLogout}
             >
               Logout
             </Dropdown.Item>

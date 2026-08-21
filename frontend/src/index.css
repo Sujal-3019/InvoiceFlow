@@ -273,3 +273,134 @@ select {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* =========================================================
+   INVOICE PRINT STYLES
+========================================================= */
+
+@media print {
+  /* A4 page */
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+
+  /* Prevent browser from trying to use responsive/mobile layout */
+  html,
+  body {
+    width: 210mm;
+    min-width: 210mm;
+    margin: 0;
+    padding: 0;
+    background: white !important;
+  }
+
+  /* Hide the entire application by default */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Show ONLY invoice document */
+  #invoice-document,
+  #invoice-document * {
+    visibility: visible;
+  }
+
+  /* Position invoice at the printable page */
+  #invoice-document {
+    position: absolute;
+    left: 0;
+    top: 0;
+
+    width: 100%;
+    max-width: none;
+
+    margin: 0 !important;
+
+    padding: 0 !important;
+
+    border: none !important;
+    border-radius: 0 !important;
+
+    box-shadow: none !important;
+
+    background: white !important;
+
+    overflow: visible !important;
+  }
+
+  /* Disable dark mode while printing */
+  #invoice-document * {
+    color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Remove screen-only styling */
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Keep invoice desktop layout */
+  #invoice-document .md\:flex-row {
+    flex-direction: row !important;
+  }
+
+  #invoice-document .md\:justify-between {
+    justify-content: space-between !important;
+  }
+
+  #invoice-document .md\:text-right {
+    text-align: right !important;
+  }
+
+  #invoice-document .md\:grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  #invoice-document .md\:w-96 {
+    width: 24rem !important;
+  }
+
+  /* Prevent invoice content from being clipped */
+  #invoice-document,
+  #invoice-document > div {
+    overflow: visible !important;
+  }
+
+  /* Tables */
+  #invoice-document table {
+    width: 100% !important;
+    min-width: 0 !important;
+    border-collapse: collapse;
+  }
+
+  /* Don't split table rows */
+  #invoice-document tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #invoice-document thead {
+    display: table-header-group;
+  }
+
+  /* Keep important blocks together */
+  #invoice-document .rounded-xl {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Avoid breaking totals in the middle */
+  #invoice-document table,
+  #invoice-document .mt-8,
+  #invoice-document .mt-10 {
+    break-inside: auto;
+  }
+
+  /* Images should print */
+  #invoice-document img {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

@@ -13,6 +13,7 @@ import {
 
 import { api } from "../../utils/axiosInstance";
 import { useToast } from "../../context/ToastContext";
+import { useAuth } from "../../context/AuthContext";
 
 import Button from "../../components/ui/Button";
 import Input from "../../components/ui/Input";
@@ -26,6 +27,7 @@ import Pagination from "../../components/ui/Pagination";
 
 const Products = () => {
   const { success, error } = useToast();
+  const { user } = useAuth();
 
   // ==========================
   // PRODUCT STATE
@@ -354,10 +356,16 @@ const Products = () => {
   // FORMAT CURRENCY
   // ==========================
 
+  const currency =
+    user?.currency ||
+    user?.profile?.currency ||
+    "INR";
+
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat("en-US", {
+    return new Intl.NumberFormat("en-IN", {
       style: "currency",
-      currency: "USD",
+      currency: currency.toUpperCase(),
+      maximumFractionDigits: 2,
     }).format(Number(amount) || 0);
   };
 
