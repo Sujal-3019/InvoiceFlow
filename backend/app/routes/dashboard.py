@@ -10,6 +10,7 @@ from ..models import (
     Client,
     Product,
     Invoice,
+    Company,
 )
 from ..security import get_current_user
 
@@ -20,15 +21,66 @@ router = APIRouter(
 )
 
 
+def get_user_company(
+    company_id: int | None,
+    current_user: User,
+    db: Session,
+):
+    # Prefer the user's active company when company_id is not supplied.
+    if company_id is None:
+        active_id = getattr(current_user, "active_company_id", None)
+        if active_id is not None:
+            company_id = active_id
+
+    query = db.query(Company).filter(
+        Company.user_id == current_user.id,
+    )
+
+    if company_id is not None:
+        query = query.filter(
+            Company.id == company_id,
+        )
+
+    return (
+        query
+        .order_by(Company.id.asc())
+        .first()
+    )
+
+
 # ============================================================
 # DASHBOARD SUMMARY
 # ============================================================
 
 @router.get("/summary")
 def get_dashboard_summary(
+    company_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+
+    if not company:
+        return {
+            "total_clients": 0,
+            "total_products": 0,
+            "total_invoices": 0,
+            "total_revenue": "0.00",
+            "paid_amount": "0.00",
+            "partial_amount": "0.00",
+            "unpaid_amount": "0.00",
+            "draft_invoices": 0,
+            "sent_invoices": 0,
+            "cancelled_invoices": 0,
+            "paid_invoices": 0,
+            "partial_invoices": 0,
+            "unpaid_invoices": 0,
+        }
+
     # --------------------------------------------------------
     # Total clients
     # --------------------------------------------------------
@@ -36,7 +88,7 @@ def get_dashboard_summary(
     total_clients = (
         db.query(func.count(Client.id))
         .filter(
-            Client.user_id == current_user.id
+            Client.company_id == company.id
         )
         .scalar()
     ) or 0
@@ -48,7 +100,7 @@ def get_dashboard_summary(
     total_products = (
         db.query(func.count(Product.id))
         .filter(
-            Product.user_id == current_user.id
+            Product.company_id == company.id
         )
         .scalar()
     ) or 0
@@ -60,7 +112,7 @@ def get_dashboard_summary(
     total_invoices = (
         db.query(func.count(Invoice.id))
         .filter(
-            Invoice.user_id == current_user.id
+            Invoice.company_id == company.id
         )
         .scalar()
     ) or 0
@@ -79,7 +131,7 @@ def get_dashboard_summary(
             )
         )
         .filter(
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company.id,
             Invoice.status != "cancelled",
         )
         .scalar()
@@ -97,7 +149,7 @@ def get_dashboard_summary(
             )
         )
         .filter(
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company.id,
             Invoice.payment_status == "paid",
             Invoice.status != "cancelled",
         )
@@ -125,7 +177,7 @@ def get_dashboard_summary(
             )
         )
         .filter(
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company.id,
             Invoice.payment_status == "partial",
             Invoice.status != "cancelled",
         )
@@ -144,7 +196,7 @@ def get_dashboard_summary(
             )
         )
         .filter(
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company.id,
             Invoice.payment_status == "unpaid",
             Invoice.status != "cancelled",
         )
@@ -158,7 +210,7 @@ def get_dashboard_summary(
     draft_invoices = (
         db.query(func.count(Invoice.id))
         .filter(
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company.id,
             Invoice.status == "draft",
         )
         .scalar()
@@ -167,7 +219,7 @@ def get_dashboard_summary(
     sent_invoices = (
         db.query(func.count(Invoice.id))
         .filter(
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company.id,
             Invoice.status == "sent",
         )
         .scalar()
@@ -176,7 +228,7 @@ def get_dashboard_summary(
     cancelled_invoices = (
         db.query(func.count(Invoice.id))
         .filter(
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company.id,
             Invoice.status == "cancelled",
         )
         .scalar()
@@ -185,7 +237,7 @@ def get_dashboard_summary(
     paid_invoices = (
         db.query(func.count(Invoice.id))
         .filter(
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company.id,
             Invoice.payment_status == "paid",
             Invoice.status != "cancelled",
         )
@@ -199,7 +251,7 @@ def get_dashboard_summary(
     unpaid_invoices = (
         db.query(func.count(Invoice.id))
         .filter(
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company.id,
             Invoice.payment_status == "unpaid",
             Invoice.status != "cancelled",
         )
@@ -213,7 +265,7 @@ def get_dashboard_summary(
     partial_invoices = (
         db.query(func.count(Invoice.id))
         .filter(
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company.id,
             Invoice.payment_status == "partial",
             Invoice.status != "cancelled",
         )

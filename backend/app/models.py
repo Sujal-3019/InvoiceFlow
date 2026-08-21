@@ -49,11 +49,98 @@ class User(Base):
         String,
         nullable=True,
     )
+
     google_id = Column(
         String,
         unique=True,
         index=True,
         nullable=True,
+    )
+
+    # --------------------------------------------------------
+    # ACTIVE COMPANY
+    #
+    # A user may have multiple companies. Keep track of the
+    # currently-selected company so the frontend can omit
+    # sending company_id on every request.
+    # --------------------------------------------------------
+    active_company_id = Column(
+        Integer,
+        ForeignKey(
+            "companies.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+        index=True,
+    )
+
+    active_company = relationship(
+        "Company",
+        foreign_keys=[active_company_id],
+        post_update=True,
+    )
+
+    # ========================================================
+    # RELATIONSHIPS
+    # ========================================================
+
+    companies = relationship(
+        "Company",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        foreign_keys="[Company.user_id]",
+    )
+
+
+# ============================================================
+# COMPANY
+# ============================================================
+
+class Company(Base):
+    __tablename__ = "companies"
+
+    # Ensure per-user company numbering is unique
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "company_number",
+            name="uq_user_company_number",
+        ),
+    )
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    # ========================================================
+    # OWNER
+    # ========================================================
+
+    user_id = Column(
+        Integer,
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    # ========================================================
+    # PER-USER COMPANY NUMBER
+    #
+    # This numbers companies relative to their owner (1, 2, 3...).
+    # Useful when each user wants their own company indices.
+    # ========================================================
+
+    company_number = Column(
+        Integer,
+        nullable=False,
+        default=1,
+        index=True,
     )
 
     # ========================================================
@@ -90,17 +177,9 @@ class User(Base):
         nullable=True,
     )
 
-    # --------------------------------------------------------
-    # Current company/profile logo
-    #
-    # Example:
-    # /uploads/invoice_logos/user_1_xxxxx.png
-    #
-    # This is the user's CURRENT logo.
-    #
-    # Existing generated PDFs are independent snapshots
-    # because the PDF binary is stored in Invoice.pdf_data.
-    # --------------------------------------------------------
+    # ========================================================
+    # COMPANY LOGO
+    # ========================================================
 
     logo_url = Column(
         String(500),
@@ -206,23 +285,29 @@ class User(Base):
     # RELATIONSHIPS
     # ========================================================
 
+    user = relationship(
+        "User",
+        back_populates="companies",
+        foreign_keys=[user_id],
+    )
+
     clients = relationship(
         "Client",
-        back_populates="user",
+        back_populates="company",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
 
     products = relationship(
         "Product",
-        back_populates="user",
+        back_populates="company",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
 
     invoices = relationship(
         "Invoice",
-        back_populates="user",
+        back_populates="company",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
@@ -241,15 +326,23 @@ class Client(Base):
         index=True,
     )
 
-    user_id = Column(
+    # ========================================================
+    # COMPANY OWNERSHIP
+    # ========================================================
+
+    company_id = Column(
         Integer,
         ForeignKey(
-            "users.id",
+            "companies.id",
             ondelete="CASCADE",
         ),
         nullable=False,
         index=True,
     )
+
+    # ========================================================
+    # CLIENT INFORMATION
+    # ========================================================
 
     company_name = Column(
         String,
@@ -285,8 +378,8 @@ class Client(Base):
     # RELATIONSHIPS
     # ========================================================
 
-    user = relationship(
-        "User",
+    company = relationship(
+        "Company",
         back_populates="clients",
     )
 
@@ -309,15 +402,23 @@ class Product(Base):
         index=True,
     )
 
-    user_id = Column(
+    # ========================================================
+    # COMPANY OWNERSHIP
+    # ========================================================
+
+    company_id = Column(
         Integer,
         ForeignKey(
-            "users.id",
+            "companies.id",
             ondelete="CASCADE",
         ),
         nullable=False,
         index=True,
     )
+
+    # ========================================================
+    # PRODUCT INFORMATION
+    # ========================================================
 
     name = Column(
         String,
@@ -356,8 +457,8 @@ class Product(Base):
     # RELATIONSHIPS
     # ========================================================
 
-    user = relationship(
-        "User",
+    company = relationship(
+        "Company",
         back_populates="products",
     )
 
@@ -380,9 +481,9 @@ class Invoice(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "user_id",
+            "company_id",
             "invoice_number",
-            name="uq_user_invoice_number",
+            name="uq_company_invoice_number",
         ),
     )
 
@@ -397,18 +498,22 @@ class Invoice(Base):
     )
 
     # ========================================================
-    # OWNERSHIP
+    # COMPANY OWNERSHIP
     # ========================================================
 
-    user_id = Column(
+    company_id = Column(
         Integer,
         ForeignKey(
-            "users.id",
+            "companies.id",
             ondelete="CASCADE",
         ),
         nullable=False,
         index=True,
     )
+
+    # ========================================================
+    # CLIENT
+    # ========================================================
 
     client_id = Column(
         Integer,
@@ -438,10 +543,11 @@ class Invoice(Base):
         Date,
         nullable=True,
     )
+
     currency = Column(
-        String(3), 
-        nullable=False, 
-        default="INR"
+        String(3),
+        nullable=False,
+        default="INR",
     )
 
     # ========================================================
@@ -539,24 +645,6 @@ class Invoice(Base):
     # ========================================================
     # STORED PDF SNAPSHOT
     # ========================================================
-    #
-    # The generated invoice PDF is stored directly in the DB.
-    #
-    # This is intentional:
-    #
-    # 1. Changing the company logo does not change old PDFs.
-    # 2. Changing the client does not change old PDFs.
-    # 3. Changing products does not change old PDFs.
-    # 4. Changing invoice information does not change old PDFs.
-    # 5. Changing payment information does not change old PDFs.
-    #
-    # The PDF only changes when:
-    #
-    # POST /invoices/{invoice_id}/pdf
-    #
-    # is explicitly called.
-    #
-    # ========================================================
 
     pdf_data = Column(
         LargeBinary,
@@ -577,8 +665,8 @@ class Invoice(Base):
     # RELATIONSHIPS
     # ========================================================
 
-    user = relationship(
-        "User",
+    company = relationship(
+        "Company",
         back_populates="invoices",
     )
 
@@ -628,26 +716,6 @@ class InvoiceItem(Base):
 
     # ========================================================
     # PRODUCT RELATIONSHIP
-    # ========================================================
-    #
-    # IMPORTANT:
-    #
-    # product_id is nullable intentionally.
-    #
-    # An invoice must preserve its historical item even if
-    # the original product is deleted.
-    #
-    # Therefore:
-    #
-    # Product deleted
-    #       ↓
-    # InvoiceItem remains
-    #       ↓
-    # product_id becomes NULL
-    #
-    # The historical description, quantity, unit_price and
-    # gst_percent remain stored on the InvoiceItem itself.
-    #
     # ========================================================
 
     product_id = Column(
@@ -701,7 +769,6 @@ class InvoiceItem(Base):
             2,
         ),
         nullable=False,
-        default=0,
     )
 
     line_total = Column(

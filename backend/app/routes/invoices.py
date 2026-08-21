@@ -9,6 +9,7 @@ from app.models import (
     Client,
     Product,
     User,
+    Company,
 )
 from fastapi import (
     APIRouter,
@@ -49,6 +50,7 @@ from ..models import (
     Client,
     Product,
     User,
+    Company,
 )
 from ..schemas import (
     InvoiceCreate,
@@ -129,7 +131,7 @@ def calculate_payment_status(
     amount_paid: Decimal,
     grand_total: Decimal,
     due_date=None,
-):
+ ):
     """
     Calculate amount due and payment status.
     """
@@ -174,6 +176,43 @@ def calculate_payment_status(
         amount_due,
         payment_status,
     )
+
+def update_payment_status(invoice: Invoice):
+    """
+    Update invoice payment status based on:
+    - amount_paid
+    - grand_total
+    - due_date
+    """
+
+    amount_paid = money(
+        Decimal(invoice.amount_paid or 0)
+    )
+
+    grand_total = money(
+        Decimal(invoice.grand_total or 0)
+    )
+
+    # Fully paid
+    if amount_paid >= grand_total:
+        invoice.payment_status = "paid"
+
+    # Unpaid/partial invoice past due date
+    elif (
+        invoice.due_date is not None
+        and invoice.due_date < datetime.now().date()
+    ):
+        invoice.payment_status = "overdue"
+
+    # Partially paid
+    elif amount_paid > ZERO:
+        invoice.payment_status = "partial"
+
+    # Not paid
+    else:
+        invoice.payment_status = "unpaid"
+
+    return invoice.payment_status
 
 
 def calculate_item_totals(
@@ -305,6 +344,41 @@ def get_logo_file_path(
         return None
 
     return path
+
+
+def get_user_company(
+    company_id: int | None,
+    current_user: User,
+    db: Session,
+):
+    # Prefer the user's active company when company_id is not supplied.
+    if company_id is None:
+        active_id = getattr(current_user, "active_company_id", None)
+        if active_id is not None:
+            company_id = active_id
+
+    query = db.query(Company).filter(
+        Company.user_id == current_user.id,
+    )
+
+    if company_id is not None:
+        query = query.filter(
+            Company.id == company_id,
+        )
+
+    company = (
+        query
+        .order_by(Company.id.asc())
+        .first()
+    )
+ 
+    if not company:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Company not found.",
+        )
+
+    return company
 
 
 # ============================================================
@@ -549,12 +623,12 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
     # DATA
     # ========================================================
 
-    user = invoice.user
+    company = invoice.company
     client = invoice.client
 
     company_name = get_optional_value(
-        user,
-        "company_name",
+        company,
+        "company",
         "business_name",
         "shop_name",
         "name",
@@ -563,14 +637,14 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
     )
 
     company_email = get_optional_value(
-        user,
+        company,
         "company_email",
         "email",
         default="",
     )
 
     company_phone = get_optional_value(
-        user,
+        company,
         "company_phone",
         "phone",
         "mobile",
@@ -578,14 +652,14 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
     )
 
     company_address = get_optional_value(
-        user,
+        company,
         "company_address",
         "address",
         "business_address",
         default="",
     )
     company_gst = get_optional_value(
-        user,
+        company,
         "gst_number",
         "gstin",
         "gst_no",
@@ -1802,9 +1876,17 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
 )
 def create_invoice(
     invoice_data: InvoiceCreate,
+    company_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+    company_id = company.id
 
     # --------------------------------------------------------
     # Validate items
@@ -1838,7 +1920,7 @@ def create_invoice(
         db.query(Client)
         .filter(
             Client.id == invoice_data.client_id,
-            Client.user_id == current_user.id,
+            Client.company_id == company_id,
         )
         .first()
     )
@@ -1856,9 +1938,8 @@ def create_invoice(
     existing_invoice = (
         db.query(Invoice)
         .filter(
-            Invoice.user_id == current_user.id,
-            Invoice.invoice_number
-            == invoice_data.invoice_number,
+            Invoice.company_id == company_id,
+            Invoice.invoice_number == invoice_data.invoice_number,
         )
         .first()
     )
@@ -1882,13 +1963,13 @@ def create_invoice(
     # --------------------------------------------------------
 
     invoice = Invoice(
-        user_id=current_user.id,
+        company_id=company_id,
         client_id=client.id,
         invoice_number=invoice_data.invoice_number,
         currency=invoice_data.currency,
         invoice_date=invoice_data.invoice_date,
         due_date=invoice_data.due_date,
-        logo_url=current_user.logo_url,
+        logo_url=invoice_data.logo_url or company.logo_url,
         subtotal=ZERO,
         discount=discount,
         tax_amount=ZERO,
@@ -1935,7 +2016,7 @@ def create_invoice(
             db.query(Product)
             .filter(
                 Product.id == item_data.product_id,
-                Product.user_id == current_user.id,
+                Product.company_id == company_id,
             )
             .first()
         )
@@ -2123,17 +2204,9 @@ def create_invoice(
             ),
         )
 
-    if amount_paid == ZERO:
-        payment_status = "unpaid"
-
-    elif amount_paid < grand_total:
-        payment_status = "partial"
-
-    else:
-        payment_status = "paid"
-
     invoice.amount_paid = amount_paid
-    invoice.payment_status = payment_status
+
+    update_payment_status(invoice)
 
     # --------------------------------------------------------
     # Save
@@ -2164,17 +2237,26 @@ def create_invoice(
 # ============================================================
 @router.get("/next-number")
 def get_next_invoice_number(
+    company_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    prefix = current_user.invoice_prefix or "INV-"
-    starting_number = current_user.invoice_starting_number or 1
+
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+    company_id = company.id
+    
+    prefix = company.invoice_prefix or "INV-"
+    starting_number = company.invoice_starting_number or 1001
 
     # Get the latest invoice number for this user
     latest_invoice = (
         db.query(Invoice)
         .filter(
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company_id,
             Invoice.invoice_number.isnot(None),
         )
         .order_by(Invoice.id.desc())
@@ -2208,25 +2290,47 @@ def get_next_invoice_number(
     response_model=list[InvoiceResponse],
 )
 def get_invoices(
+    company_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
 
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+    company_id = company.id
+
     invoices = (
         db.query(Invoice)
         .options(
-            joinedload(Invoice.user),
+            joinedload(Invoice.company),
             joinedload(Invoice.client),
             joinedload(Invoice.items),
         )
         .filter(
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company_id,
         )
         .order_by(
             Invoice.id.desc()
         )
         .all()
     )
+
+    status_changed = False
+
+    for invoice in invoices:
+
+        old_status = invoice.payment_status
+
+        update_payment_status(invoice)
+
+        if old_status != invoice.payment_status:
+            status_changed = True
+
+    if status_changed:
+        db.commit()
 
     return [
         invoice_to_response(invoice)
@@ -2260,20 +2364,28 @@ def get_invoices(
 )
 def generate_invoice_pdf_endpoint(
     invoice_id: int,
+    company_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
 
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+    company_id = company.id
+
     invoice = (
         db.query(Invoice)
         .options(
-            joinedload(Invoice.user),
+            joinedload(Invoice.company),
             joinedload(Invoice.client),
             joinedload(Invoice.items),
         )
         .filter(
             Invoice.id == invoice_id,
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company_id,
         )
         .first()
     )
@@ -2357,15 +2469,23 @@ def generate_invoice_pdf_endpoint(
 )
 def download_invoice_pdf(
     invoice_id: int,
+    company_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+    company_id = company.id
 
     invoice = (
         db.query(Invoice)
         .filter(
             Invoice.id == invoice_id,
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company_id,
         )
         .first()
     )
@@ -2416,20 +2536,28 @@ def download_invoice_pdf(
 )
 def get_invoice(
     invoice_id: int,
+    company_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+    company_id = company.id
 
     invoice = (
         db.query(Invoice)
         .options(
             joinedload(Invoice.client),
             joinedload(Invoice.items),
-            joinedload(Invoice.user),
+            joinedload(Invoice.company),
         )
         .filter(
             Invoice.id == invoice_id,
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company_id,
         )
         .first()
     )
@@ -2441,9 +2569,15 @@ def get_invoice(
             detail="Invoice not found.",
         )
 
-    return invoice_to_response(
-        invoice
-    )
+    old_status = invoice.payment_status
+
+    update_payment_status(invoice)
+
+    if old_status != invoice.payment_status:
+        db.commit()
+        db.refresh(invoice)
+
+    return invoice_to_response(invoice)
 
 
 # ============================================================
@@ -2462,10 +2596,18 @@ os.makedirs(
 )
 async def upload_invoice_logo(
     invoice_id: int,
+    company_id: int | None = None,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+    company_id = company.id
 
     # --------------------------------------------------------
     # Find invoice belonging to current user
@@ -2475,7 +2617,7 @@ async def upload_invoice_logo(
         db.query(Invoice)
         .filter(
             Invoice.id == invoice_id,
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company_id,
         )
         .first()
     )
@@ -2519,12 +2661,10 @@ async def upload_invoice_logo(
         )
 
     # --------------------------------------------------------
-    # Save old profile logo
+    # Save old company logo
     # --------------------------------------------------------
 
-    old_profile_logo_url = (
-        current_user.logo_url
-    )
+    old_company_logo_url = company.logo_url
 
     # --------------------------------------------------------
     # Create unique filename
@@ -2575,7 +2715,7 @@ async def upload_invoice_logo(
     # Save new logo to:
     #
     # 1. Current invoice
-    # 2. User profile
+    # 2. Company profile
     #
     # IMPORTANT:
     #
@@ -2585,7 +2725,7 @@ async def upload_invoice_logo(
     # --------------------------------------------------------
 
     invoice.logo_url = logo_url
-    current_user.logo_url = logo_url
+    company.logo_url = logo_url
 
     try:
 
@@ -2608,16 +2748,16 @@ async def upload_invoice_logo(
         )
 
     # --------------------------------------------------------
-    # Delete OLD profile logo only after successful commit
+    # Delete OLD company logo only after successful commit
     # --------------------------------------------------------
 
     if (
-        old_profile_logo_url
-        and old_profile_logo_url != logo_url
+        old_company_logo_url
+        and old_company_logo_url != logo_url
     ):
 
         delete_logo_file(
-            old_profile_logo_url
+            old_company_logo_url
         )
 
     db.refresh(invoice)
@@ -2638,9 +2778,17 @@ async def upload_invoice_logo(
 def update_invoice(
     invoice_id: int,
     invoice_data: InvoiceUpdate,
+    company_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+    company_id = company.id
     # --------------------------------------------------------
     # Find invoice
     # --------------------------------------------------------
@@ -2652,7 +2800,7 @@ def update_invoice(
         )
         .filter(
             Invoice.id == invoice_id,
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company_id,
         )
         .first()
     )
@@ -2664,17 +2812,17 @@ def update_invoice(
             detail="Invoice not found.",
         )
     # --------------------------------------------------------
-        # CANCELLED INVOICE IS READ-ONLY
-        # --------------------------------------------------------
+    # CANCELLED INVOICE IS READ-ONLY
+    # --------------------------------------------------------
     
-        if invoice.status == "cancelled":
+    if invoice.status == "cancelled":
     
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    "Cancelled invoices cannot be edited."
-                ),
-            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Cancelled invoices cannot be edited."
+            ),
+        )
     
 
     # --------------------------------------------------------
@@ -2715,21 +2863,18 @@ def update_invoice(
         client = (
             db.query(Client)
             .filter(
-                Client.id
-                == update_data["client_id"],
-                Client.user_id
-                == current_user.id,
+                Client.id == update_data["client_id"],
+                Client.company_id == company_id,
             )
             .first()
         )
 
         if not client:
-
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Client not found.",
             )
-
+        
     # --------------------------------------------------------
     # Validate discount
     # --------------------------------------------------------
@@ -2839,19 +2984,7 @@ def update_invoice(
                 ),
             )
 
-        if amount_paid == ZERO:
-
-            payment_status = "unpaid"
-
-        elif amount_paid < grand_total:
-
-            payment_status = "partial"
-
-        else:
-
-            payment_status = "paid"
-
-        invoice.payment_status = payment_status
+        update_payment_status(invoice)
 
         try:
 
@@ -3002,8 +3135,7 @@ def update_invoice(
                 db.query(Product)
                 .filter(
                     Product.id == product_id,
-                    Product.user_id
-                    == current_user.id,
+                    Product.company_id == company_id,
                 )
                 .first()
             )
@@ -3213,19 +3345,7 @@ def update_invoice(
     # Calculate payment status
     # --------------------------------------------------------
 
-    if amount_paid == ZERO:
-
-        payment_status = "unpaid"
-
-    elif amount_paid < grand_total:
-
-        payment_status = "partial"
-
-    else:
-
-        payment_status = "paid"
-
-    invoice.payment_status = payment_status
+    update_payment_status(invoice)
 
     # --------------------------------------------------------
     # IMPORTANT:
@@ -3271,18 +3391,27 @@ def update_invoice(
 def update_invoice_status(
     invoice_id: int,
     new_status: str,
+    company_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+    company_id = company.id
 
     invoice = (
         db.query(Invoice)
         .filter(
             Invoice.id == invoice_id,
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company_id,
         )
         .first()
     )
+    
 
     if not invoice:
 
@@ -3353,119 +3482,66 @@ def update_invoice_status(
 def update_invoice_payment(
     invoice_id: int,
     amount_paid: Decimal,
+    company_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # --------------------------------------------------------
-    # CANCELLED INVOICE IS READ-ONLY
-    # --------------------------------------------------------
 
-    if invoice.status == "cancelled":
-
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "Payment cannot be updated for a cancelled invoice."
-            ),
-        )
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+    company_id = company.id
 
     invoice = (
         db.query(Invoice)
         .filter(
             Invoice.id == invoice_id,
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company_id,
         )
         .first()
     )
 
     if not invoice:
-
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Invoice not found.",
         )
-    # --------------------------------------------------------
-    # CANCELLED INVOICE IS READ-ONLY
-    # --------------------------------------------------------
 
     if invoice.status == "cancelled":
-
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "Logo cannot be changed for a cancelled invoice."
-            ),
+            detail="Payment cannot be updated for a cancelled invoice.",
         )
 
-    amount_paid = money(
-        amount_paid
-    )
+    amount_paid = money(amount_paid)
 
     grand_total = money(
-        Decimal(
-            invoice.grand_total
-        )
+        Decimal(invoice.grand_total or 0)
     )
 
-    # --------------------------------------------------------
-    # Validate payment
-    # --------------------------------------------------------
-
     if amount_paid < ZERO:
-
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "Paid amount cannot be negative."
-            ),
+            detail="Paid amount cannot be negative.",
         )
 
     if amount_paid > grand_total:
-
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "Paid amount cannot be greater than "
-                "the invoice total."
-            ),
+            detail="Paid amount cannot be greater than the invoice total.",
         )
 
-    # --------------------------------------------------------
-    # Calculate payment status
-    # --------------------------------------------------------
-
-    if amount_paid == ZERO:
-
-        payment_status = "unpaid"
-
-    elif amount_paid < grand_total:
-
-        payment_status = "partial"
-
-    else:
-
-        payment_status = "paid"
-
-    # --------------------------------------------------------
-    # Save payment
-    #
-    # IMPORTANT:
-    #
-    # Existing PDF does NOT change automatically.
-    #
-    # If payment information needs to appear in the PDF,
-    # manually regenerate it afterward.
-    # --------------------------------------------------------
-
     invoice.amount_paid = amount_paid
-    invoice.payment_status = payment_status
+
+    # Calculate payment status
+    update_payment_status(invoice)
 
     try:
-
         db.commit()
 
     except IntegrityError:
-
         db.rollback()
 
         raise HTTPException(
@@ -3475,9 +3551,7 @@ def update_invoice_payment(
 
     db.refresh(invoice)
 
-    return invoice_to_response(
-        invoice
-    )
+    return invoice_to_response(invoice)
 # ============================================================
 # DELETE INVOICE
 # ============================================================
@@ -3487,9 +3561,17 @@ def update_invoice_payment(
 )
 def delete_invoice(
     invoice_id: int,
+    company_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+    company_id = company.id
 
     # --------------------------------------------------------
     # Find invoice belonging to current user
@@ -3499,7 +3581,7 @@ def delete_invoice(
         db.query(Invoice)
         .filter(
             Invoice.id == invoice_id,
-            Invoice.user_id == current_user.id,
+            Invoice.company_id == company_id,
         )
         .first()
     )
@@ -3574,9 +3656,12 @@ def invoice_to_response(
         invoice.due_date,
     )
 
+    # Keep database value synchronized
+    invoice.payment_status = payment_status
+
     return {
         "id": invoice.id,
-        "user_id": invoice.user_id,
+        "company_id": invoice.company_id,
         "client_id": invoice.client_id,
 
         "invoice_number": invoice.invoice_number,
@@ -3600,4 +3685,3 @@ def invoice_to_response(
         "terms": invoice.terms,
         "items": invoice.items,
     }
-

@@ -4,24 +4,31 @@ import os
 
 from google.oauth2 import id_token
 from google.auth.transport import requests
+
 from ..database import get_db
-from ..models import User
-from ..schemas import UserCreate, UserLogin , SetPassword
+from ..models import User, Company
+from ..schemas import UserCreate, UserLogin, SetPassword
 from ..security import (
     hash_password,
     verify_password,
     create_token,
     get_current_user,
-    create_password_setup_token,
 )
 
 
 router = APIRouter(
     prefix="/auth",
-    tags=["Auth"]
+    tags=["Auth"],
 )
 
+
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+
+
+# ============================================================
+# GOOGLE LOGIN
+# ============================================================
+
 @router.post("/google")
 def google_login(
     data: dict,
@@ -41,6 +48,10 @@ def google_login(
             detail="Google authentication is not configured",
         )
 
+    # ========================================================
+    # VERIFY GOOGLE TOKEN
+    # ========================================================
+
     try:
         google_user = id_token.verify_oauth2_token(
             google_token,
@@ -50,18 +61,15 @@ def google_login(
         )
 
     except ValueError as e:
-        print("GOOGLE TOKEN VALIDATION ERROR:", repr(e))
+        print(
+            "GOOGLE TOKEN VALIDATION ERROR:",
+            repr(e),
+        )
 
         raise HTTPException(
             status_code=401,
             detail="Invalid Google token",
         )
-
-    google_user = id_token.verify_oauth2_token(
-        google_token,
-        requests.Request(),
-        GOOGLE_CLIENT_ID,
-    ) 
 
     google_id = google_user.get("sub")
     email = google_user.get("email")
@@ -74,7 +82,7 @@ def google_login(
         )
 
     # ========================================================
-    # 1. FIND USER BY GOOGLE ID
+    # FIND USER BY GOOGLE ID
     # ========================================================
 
     db_user = (
@@ -84,7 +92,7 @@ def google_login(
     )
 
     # ========================================================
-    # 2. IF NOT FOUND, FIND USER BY EMAIL
+    # IF NOT FOUND, FIND USER BY EMAIL
     # ========================================================
 
     if not db_user:
@@ -95,12 +103,15 @@ def google_login(
         )
 
     # ========================================================
-    # 3. EXISTING USER
+    # EXISTING USER
     # ========================================================
 
     if db_user:
 
+        # ----------------------------------------------------
         # Link Google account if not already linked
+        # ----------------------------------------------------
+
         if not db_user.google_id:
             db_user.google_id = google_id
 
@@ -108,10 +119,14 @@ def google_login(
         db.refresh(db_user)
 
     # ========================================================
-    # 4. NEW GOOGLE USER
+    # NEW GOOGLE USER
     # ========================================================
 
     else:
+
+        # ----------------------------------------------------
+        # Create User
+        # ----------------------------------------------------
 
         db_user = User(
             name=name or email.split("@")[0],
@@ -121,11 +136,55 @@ def google_login(
         )
 
         db.add(db_user)
+        db.flush()
+
+        # ----------------------------------------------------
+        # Create initial Company
+        # ----------------------------------------------------
+
+        new_company = Company(
+            user_id=db_user.id,
+
+            # Default values
+            business_name=None,
+            phone=None,
+        )
+
+        db.add(new_company)
+
+        db.commit()
+        db.refresh(db_user)
+
+        # Set the new company as the user's active company
+        db_user.active_company_id = new_company.id
+        db.add(db_user)
         db.commit()
         db.refresh(db_user)
 
     # ========================================================
-    # 5. CHECK WHETHER PASSWORD EXISTS
+    # SAFETY CHECK
+    # ========================================================
+    #
+    # Existing users created before the company architecture
+    # change may not have a company.
+    #
+    # Since we are resetting the database this should normally
+    # not happen, but this keeps the authentication flow safe.
+    #
+    # ========================================================
+
+    if not db_user.companies:
+
+        new_company = Company(
+            user_id=db_user.id,
+        )
+
+        db.add(new_company)
+        db.commit()
+        db.refresh(db_user)
+
+    # ========================================================
+    # CHECK WHETHER PASSWORD EXISTS
     # ========================================================
 
     if db_user.password is None:
@@ -148,12 +207,12 @@ def google_login(
         }
 
     # ========================================================
-    # 6. PASSWORD ALREADY EXISTS
+    # PASSWORD ALREADY EXISTS
     # ========================================================
 
     token = create_token(
         {
-            "sub": db_user.email
+            "sub": db_user.email,
         }
     )
 
@@ -167,6 +226,11 @@ def google_login(
             "email": db_user.email,
         },
     }
+
+
+# ============================================================
+# SET PASSWORD
+# ============================================================
 
 @router.post("/set-password")
 def set_password(
@@ -217,7 +281,7 @@ def set_password(
 
     token = create_token(
         {
-            "sub": current_user.email
+            "sub": current_user.email,
         }
     )
 
@@ -233,90 +297,152 @@ def set_password(
     }
 
 
+# ============================================================
+# REGISTER
+# ============================================================
+
 @router.post("/register")
 def register(
-    user:UserCreate,
-    db:Session=Depends(get_db)
+    user: UserCreate,
+    db: Session = Depends(get_db),
 ):
+    # ========================================================
+    # CHECK EXISTING USER
+    # ========================================================
 
-    existing=db.query(User).filter(
-        User.email==user.email
-    ).first()
-
+    existing = (
+        db.query(User)
+        .filter(User.email == user.email)
+        .first()
+    )
 
     if existing:
         raise HTTPException(
-            400,
-            "Email already exists"
+            status_code=400,
+            detail="Email already exists",
         )
 
+    # ========================================================
+    # CREATE USER
+    # ========================================================
 
     new_user = User(
         name=user.name,
         email=user.email,
         password=hash_password(user.password),
+    )
+
+    db.add(new_user)
+
+    # --------------------------------------------------------
+    # Flush so new_user.id is available
+    # --------------------------------------------------------
+
+    db.flush()
+
+    # ========================================================
+    # CREATE INITIAL COMPANY
+    # ========================================================
+
+    new_company = Company(
+        user_id=new_user.id,
+
+        # These fields are used only for the initial company.
         company=user.company,
         phone=user.phone,
     )
 
+    db.add(new_company)
 
+    # ========================================================
+    # SAVE BOTH
+    # ========================================================
+
+    db.commit()
+
+    db.refresh(new_user)
+    db.refresh(new_company)
+
+    # Set the initial company as the user's active company
+    new_user.active_company_id = new_company.id
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
+    # ========================================================
+    # RESPONSE
+    # ========================================================
 
     return {
-        "message":"User created"
+        "message": "User created",
     }
 
 
-
+# ============================================================
+# LOGIN
+# ============================================================
 
 @router.post("/login")
 def login(
-    user:UserLogin,
-    db:Session=Depends(get_db)
+    user: UserLogin,
+    db: Session = Depends(get_db),
 ):
+    # ========================================================
+    # FIND USER
+    # ========================================================
 
-    db_user=db.query(User).filter(
-        User.email==user.email
-    ).first()
-
+    db_user = (
+        db.query(User)
+        .filter(User.email == user.email)
+        .first()
+    )
 
     if not db_user:
         raise HTTPException(
-            401,
-            "Invalid credentials"
+            status_code=401,
+            detail="Invalid credentials",
         )
 
+    # ========================================================
+    # VERIFY PASSWORD
+    # ========================================================
+
+    if not db_user.password:
+        raise HTTPException(
+            status_code=401,
+            detail="Password login is not available for this account",
+        )
 
     if not verify_password(
         user.password,
-        db_user.password
+        db_user.password,
     ):
         raise HTTPException(
-            401,
-            "Invalid credentials"
+            status_code=401,
+            detail="Invalid credentials",
         )
 
+    # ========================================================
+    # CREATE JWT
+    # ========================================================
 
-    token=create_token(
+    token = create_token(
         {
-            "sub":db_user.email
+            "sub": db_user.email,
         }
     )
 
+    # ========================================================
+    # RESPONSE
+    # ========================================================
 
     return {
-
-        "access_token":token,
-
-        "token_type":"bearer",
-
-        "user":{
-            "id":db_user.id,
-            "name":db_user.name,
-            "email":db_user.email
-        }
-
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": db_user.id,
+            "name": db_user.name,
+            "email": db_user.email,
+        },
     }
+

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Product, User
+from ..models import Product, User, Company
 from ..schemas import (
     ProductCreate,
     ProductUpdate,
@@ -18,6 +18,45 @@ router = APIRouter(
 
 
 # ============================================================
+# VERIFY COMPANY OWNERSHIP
+# ============================================================
+
+def get_user_company(
+    company_id: int | None,
+    current_user: User,
+    db: Session,
+):
+    # Prefer the user's active company when company_id is not supplied.
+    if company_id is None:
+        active_id = getattr(current_user, "active_company_id", None)
+        if active_id is not None:
+            company_id = active_id
+
+    query = db.query(Company).filter(
+        Company.user_id == current_user.id,
+    )
+
+    if company_id is not None:
+        query = query.filter(
+            Company.id == company_id,
+        )
+
+    company = (
+        query
+        .order_by(Company.id.asc())
+        .first()
+    )
+ 
+    if not company:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Company not found",
+        )
+
+    return company
+
+
+# ============================================================
 # CREATE PRODUCT
 # ============================================================
 
@@ -28,11 +67,26 @@ router = APIRouter(
 )
 def create_product(
     product_data: ProductCreate,
+    company_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # --------------------------------------------------------
+    # Verify company ownership
+    # --------------------------------------------------------
+
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+
+    # --------------------------------------------------------
+    # Create product
+    # --------------------------------------------------------
+
     new_product = Product(
-        user_id=current_user.id,
+        company_id=company.id,
         name=product_data.name,
         description=product_data.description,
         price=product_data.price,
@@ -56,13 +110,28 @@ def create_product(
     response_model=list[ProductResponse],
 )
 def get_products(
+    company_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # --------------------------------------------------------
+    # Verify company ownership
+    # --------------------------------------------------------
+
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+
+    # --------------------------------------------------------
+    # Get only products belonging to this company
+    # --------------------------------------------------------
+
     products = (
         db.query(Product)
         .filter(
-            Product.user_id == current_user.id
+            Product.company_id == company.id
         )
         .order_by(Product.id.desc())
         .all()
@@ -81,14 +150,29 @@ def get_products(
 )
 def get_product(
     product_id: int,
+    company_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # --------------------------------------------------------
+    # Verify company ownership
+    # --------------------------------------------------------
+
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+
+    # --------------------------------------------------------
+    # Find product inside this company only
+    # --------------------------------------------------------
+
     product = (
         db.query(Product)
         .filter(
             Product.id == product_id,
-            Product.user_id == current_user.id,
+            Product.company_id == company.id,
         )
         .first()
     )
@@ -113,14 +197,29 @@ def get_product(
 def update_product(
     product_id: int,
     product_data: ProductUpdate,
+    company_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # --------------------------------------------------------
+    # Verify company ownership
+    # --------------------------------------------------------
+
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+
+    # --------------------------------------------------------
+    # Find product inside this company only
+    # --------------------------------------------------------
+
     product = (
         db.query(Product)
         .filter(
             Product.id == product_id,
-            Product.user_id == current_user.id,
+            Product.company_id == company.id,
         )
         .first()
     )
@@ -130,6 +229,10 @@ def update_product(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Product not found",
         )
+
+    # --------------------------------------------------------
+    # Update only provided fields
+    # --------------------------------------------------------
 
     update_data = product_data.model_dump(
         exclude_unset=True
@@ -154,14 +257,29 @@ def update_product(
 )
 def delete_product(
     product_id: int,
+    company_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # --------------------------------------------------------
+    # Verify company ownership
+    # --------------------------------------------------------
+
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+
+    # --------------------------------------------------------
+    # Find product inside this company only
+    # --------------------------------------------------------
+
     product = (
         db.query(Product)
         .filter(
             Product.id == product_id,
-            Product.user_id == current_user.id,
+            Product.company_id == company.id,
         )
         .first()
     )
@@ -172,14 +290,21 @@ def delete_product(
             detail="Product not found",
         )
 
-    # If this product has been used in an invoice,
-    # don't physically delete it.
+    # --------------------------------------------------------
+    # If product has been used in an invoice,
+    # deactivate it instead of physically deleting it.
+    # --------------------------------------------------------
+
     if product.invoice_items:
         product.is_active = False
 
         db.commit()
 
         return None
+
+    # --------------------------------------------------------
+    # Otherwise physically delete the product
+    # --------------------------------------------------------
 
     db.delete(product)
     db.commit()

@@ -1,8 +1,8 @@
 from typing import Optional
 from datetime import date
 from decimal import Decimal
+
 from pydantic import BaseModel, ConfigDict, Field
-from pydantic import BaseModel
 
 
 # ============================================================
@@ -13,6 +13,9 @@ class UserCreate(BaseModel):
     name: str
     email: str
     password: str
+
+    # These are used only when creating
+    # the user's initial company.
     company: Optional[str] = None
     phone: Optional[str] = None
 
@@ -21,19 +24,40 @@ class UserLogin(BaseModel):
     email: str
     password: str
 
+
 class SetPassword(BaseModel):
     password: str
     confirm_password: str
 
-class UserUpdate(BaseModel):
-    # --------------------------------------------------------
-    # ACCOUNT
-    # --------------------------------------------------------
 
+class UserUpdate(BaseModel):
     name: Optional[str] = None
     email: Optional[str] = None
-    phone: Optional[str] = None
 
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+
+
+class UserResponse(BaseModel):
+    id: int
+    name: str
+    email: str
+
+    # ID of the user's currently selected company (if any)
+    active_company_id: Optional[int] = None
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+    )
+
+
+# ============================================================
+# COMPANY SCHEMAS
+# ============================================================
+
+class CompanyCreate(BaseModel):
     # --------------------------------------------------------
     # BUSINESS IDENTITY
     # --------------------------------------------------------
@@ -52,6 +76,102 @@ class UserUpdate(BaseModel):
 
     website: Optional[str] = None
     bio: Optional[str] = None
+    phone: Optional[str] = None
+
+    # --------------------------------------------------------
+    # ADDRESS
+    # --------------------------------------------------------
+
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip: Optional[str] = None
+    country: Optional[str] = None
+
+    # --------------------------------------------------------
+    # TAX & LEGAL
+    # --------------------------------------------------------
+
+    taxId: Optional[str] = Field(
+        default=None,
+        validation_alias="tax_id",
+    )
+
+    gstNumber: Optional[str] = Field(
+        default=None,
+        validation_alias="gst_number",
+    )
+
+    panNumber: Optional[str] = Field(
+        default=None,
+        validation_alias="pan_number",
+    )
+
+    registrationNumber: Optional[str] = Field(
+        default=None,
+        validation_alias="registration_number",
+    )
+
+    # --------------------------------------------------------
+    # INVOICE NUMBERING
+    # --------------------------------------------------------
+
+    invoicePrefix: Optional[str] = Field(
+        default="INV-",
+        validation_alias="invoice_prefix",
+    )
+
+    invoiceStartingNumber: Optional[int] = Field(
+        default=1001,
+        validation_alias="invoice_starting_number",
+    )
+
+    # --------------------------------------------------------
+    # INVOICE DEFAULTS
+    # --------------------------------------------------------
+
+    currency: Optional[str] = "INR"
+
+    paymentTerms: Optional[str] = Field(
+        default="Net 30",
+        validation_alias="payment_terms",
+    )
+
+    invoiceNotes: Optional[str] = Field(
+        default=None,
+        validation_alias="invoice_notes",
+    )
+
+    invoiceTerms: Optional[str] = Field(
+        default=None,
+        validation_alias="invoice_terms",
+    )
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+
+
+class CompanyUpdate(BaseModel):
+    # --------------------------------------------------------
+    # BUSINESS IDENTITY
+    # --------------------------------------------------------
+
+    company: Optional[str] = None
+
+    businessName: Optional[str] = Field(
+        default=None,
+        validation_alias="business_name",
+    )
+
+    businessType: Optional[str] = Field(
+        default=None,
+        validation_alias="business_type",
+    )
+
+    website: Optional[str] = None
+    bio: Optional[str] = None
+    phone: Optional[str] = None
 
     # --------------------------------------------------------
     # ADDRESS
@@ -126,16 +246,21 @@ class UserUpdate(BaseModel):
         populate_by_name=True,
     )
 
-class UserResponse(BaseModel):
+
+class CompanyResponse(BaseModel):
     id: int
-    name: str
-    email: str
+    user_id: int
+
+    # Per-user company index (1 for the user's first company, 2 for second, ...)
+    companyNumber: Optional[int] = Field(
+        default=None,
+        validation_alias="company_number",
+    )
 
     # --------------------------------------------------------
     # BUSINESS IDENTITY
     # --------------------------------------------------------
 
-    phone: Optional[str] = None
     company: Optional[str] = None
 
     businessName: Optional[str] = Field(
@@ -150,6 +275,7 @@ class UserResponse(BaseModel):
 
     website: Optional[str] = None
     bio: Optional[str] = None
+    phone: Optional[str] = None
 
     logo_url: Optional[str] = None
 
@@ -252,7 +378,8 @@ class ClientUpdate(BaseModel):
 
 class ClientResponse(BaseModel):
     id: int
-    user_id: int
+    company_id: int
+
     company_name: str
     contact_person: Optional[str] = None
     email: Optional[str] = None
@@ -260,8 +387,9 @@ class ClientResponse(BaseModel):
     gst_number: Optional[str] = None
     address: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
 
 
 # ============================================================
@@ -286,15 +414,18 @@ class ProductUpdate(BaseModel):
 
 class ProductResponse(BaseModel):
     id: int
-    user_id: int
+    company_id: int
+
     name: str
     description: Optional[str] = None
     price: Decimal
     gst_percent: Decimal
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
+
 
 # ============================================================
 # INVOICE ITEM SCHEMAS
@@ -309,10 +440,13 @@ class InvoiceItemUpdate(BaseModel):
     """
     Used when editing an existing invoice item.
 
-    The item ID is optional because:
-    - Existing item -> send its id
-    - New item -> don't send id
+    Existing item:
+        send its id
+
+    New item:
+        don't send id
     """
+
     id: Optional[int] = None
     product_id: int
     quantity: Decimal
@@ -322,6 +456,7 @@ class InvoiceItemResponse(BaseModel):
     id: int
     invoice_id: int
     product_id: Optional[int] = None
+
     description: Optional[str] = None
     quantity: Decimal
     unit_price: Decimal
@@ -329,38 +464,9 @@ class InvoiceItemResponse(BaseModel):
     tax_amount: Decimal
     line_total: Decimal
 
-    class Config:
-        from_attributes = True
-
-
-# ============================================================
-# INVOICE ITEM SCHEMAS
-# ============================================================
-
-class InvoiceItemCreate(BaseModel):
-    product_id: int
-    quantity: Decimal
-
-
-class InvoiceItemUpdate(BaseModel):
-    id: Optional[int] = None
-    product_id: int
-    quantity: Decimal
-
-
-class InvoiceItemResponse(BaseModel):
-    id: int
-    invoice_id: int
-    product_id: Optional[int] = None
-    description: Optional[str] = None
-    quantity: Decimal
-    unit_price: Decimal
-    gst_percent: Decimal
-    tax_amount: Decimal
-    line_total: Decimal
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
 
 
 # ============================================================
@@ -371,7 +477,9 @@ class InvoiceCreate(BaseModel):
     client_id: int
     invoice_number: str
     invoice_date: date
+
     currency: str = "INR"
+
     due_date: Optional[date] = None
     logo_url: Optional[str] = None
 
@@ -388,6 +496,7 @@ class InvoiceCreate(BaseModel):
 
 class InvoiceUpdate(BaseModel):
     client_id: Optional[int] = None
+
     invoice_date: Optional[date] = None
     due_date: Optional[date] = None
 
@@ -405,22 +514,25 @@ class InvoiceUpdate(BaseModel):
 
     items: Optional[list[InvoiceItemUpdate]] = None
 
+
 class InvoiceClientResponse(BaseModel):
     id: int
     company_name: str
+
     contact_person: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     gst_number: Optional[str] = None
     address: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
 
 
 class InvoiceResponse(BaseModel):
     id: int
-    user_id: int
+    company_id: int
 
     client_id: int
     client: Optional[ClientResponse] = None
@@ -442,10 +554,12 @@ class InvoiceResponse(BaseModel):
 
     status: str
     payment_status: str
+
     notes: Optional[str] = None
     terms: Optional[str] = None
 
     items: list[InvoiceItemResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
