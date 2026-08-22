@@ -20,7 +20,7 @@ import { useProfile } from '../../context/ProfileContext';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../utils/axiosInstance';
 import { useToast } from '../../context/ToastContext';
-
+import { Link, useNavigate } from 'react-router-dom';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Textarea from '../../components/ui/Textarea';
@@ -46,6 +46,7 @@ const getLogoUrl = (logo) => {
 };
 
 const ProfilePage = () => {
+  const navigate = useNavigate();
 
   const { user } = useAuth();
   const {
@@ -963,6 +964,7 @@ const ProfilePage = () => {
 
               <button
                 type="button"
+                onClick={() => navigate('/change-password')}
                 className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl transition-colors"
               >
                 <FiShield size={18} />
