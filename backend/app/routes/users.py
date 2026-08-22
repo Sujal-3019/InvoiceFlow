@@ -13,8 +13,8 @@ import uuid
 
 from ..database import get_db
 from ..models import User, Company
-from ..schemas import UserResponse
-from ..security import get_current_user
+from ..schemas import UserResponse , ChangePasswordRequest
+from ..security import get_current_user , hash_password, verify_password
 
 
 router = APIRouter(
@@ -732,4 +732,89 @@ def delete_company(
 
     return {
         "message": "Company deleted successfully"
+    }
+
+# ============================================================
+# CHANGE PASSWORD
+# ============================================================
+
+@router.put("/change-password")
+def change_password(
+    data: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # ========================================================
+    # CHECK WHETHER USER HAS A PASSWORD
+    # ========================================================
+
+    if not current_user.password:
+        raise HTTPException(
+            status_code=400,
+            detail="Password is not set for this account",
+        )
+
+    # ========================================================
+    # VERIFY CURRENT PASSWORD
+    # ========================================================
+
+    if not verify_password(
+        data.current_password,
+        current_user.password,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Current password is incorrect",
+        )
+
+    # ========================================================
+    # VALIDATE NEW PASSWORD
+    # ========================================================
+
+    if len(data.new_password) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="New password must be at least 8 characters",
+        )
+
+    # ========================================================
+    # CONFIRM NEW PASSWORD
+    # ========================================================
+
+    if data.new_password != data.confirm_password:
+        raise HTTPException(
+            status_code=400,
+            detail="New passwords do not match",
+        )
+
+    # ========================================================
+    # PREVENT SAME PASSWORD
+    # ========================================================
+
+    if verify_password(
+        data.new_password,
+        current_user.password,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="New password must be different from current password",
+        )
+
+    # ========================================================
+    # HASH AND SAVE NEW PASSWORD
+    # ========================================================
+
+    current_user.password = hash_password(
+        data.new_password
+    )
+
+    db.commit()
+    db.refresh(current_user)
+
+    # ========================================================
+    # RESPONSE
+    # ========================================================
+
+    return {
+        "message": "Password changed successfully"
     }
