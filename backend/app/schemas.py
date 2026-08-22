@@ -2,7 +2,7 @@ from typing import Optional
 from datetime import date
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field , EmailStr
 
 
 # ============================================================
@@ -457,6 +457,8 @@ class InvoiceItemResponse(BaseModel):
     invoice_id: int
     product_id: Optional[int] = None
 
+    name: Optional[str] = None
+    
     description: Optional[str] = None
     quantity: Decimal
     unit_price: Decimal
@@ -515,6 +517,11 @@ class InvoiceUpdate(BaseModel):
     items: Optional[list[InvoiceItemUpdate]] = None
 
 
+class InvoiceReminderRequest(BaseModel):
+    invoice_ids: list[int] = Field(min_length=1)
+
+
+
 class InvoiceClientResponse(BaseModel):
     id: int
     company_name: str
@@ -563,3 +570,29 @@ class InvoiceResponse(BaseModel):
     model_config = ConfigDict(
         from_attributes=True,
     )
+
+# ============================================================
+# FORGOT PASSWORD
+# ============================================================
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+# ============================================================
+# RESET PASSWORD
+# ============================================================
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str
+    confirm_password: str
+
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+    confirm_password: str
+
+
