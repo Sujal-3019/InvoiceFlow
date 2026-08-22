@@ -842,29 +842,82 @@ const EditInvoice = () => {
   }, [calculatedItems]);
 
   /* =======================================================
-     TAX TOTAL
-  ======================================================= */
-
-  const taxTotal = useMemo(() => {
-    return calculatedItems.reduce(
-      (sum, item) =>
-        sum + item.taxAmount,
-      0
-    );
-  }, [calculatedItems]);
-
-  /* =======================================================
-     DISCOUNT VALUE
-  ======================================================= */
+   DISCOUNT VALUE
+======================================================= */
 
   const discountValue = useMemo(() => {
     const value = Number(discount) || 0;
 
+    // Discount cannot be greater than subtotal
     return Math.max(
       0,
-      Math.min(value, subtotal + taxTotal)
+      Math.min(value, subtotal)
     );
-  }, [discount, subtotal, taxTotal]);
+  }, [discount, subtotal]);
+
+  /* =======================================================
+     TAXABLE AMOUNT
+     GST IS CALCULATED AFTER DISCOUNT
+  ======================================================= */
+
+  const taxableAmount = useMemo(() => {
+    return Math.max(
+      0,
+      subtotal - discountValue
+    );
+  }, [subtotal, discountValue]);
+
+  /* =======================================================
+     TAX TOTAL
+     GST IS APPLIED ON DISCOUNTED AMOUNT
+  ======================================================= */
+
+  const taxTotal = useMemo(() => {
+    if (taxableAmount <= 0) {
+      return 0;
+    }
+
+    return calculatedItems.reduce(
+      (sum, item) => {
+        const quantity =
+          Number(item.quantity) || 0;
+
+        const unitPrice =
+          Number(item.unitPrice) || 0;
+
+        const taxRate =
+          Number(item.taxRate) || 0;
+
+        const itemSubtotal =
+          quantity * unitPrice;
+
+        // Allocate the overall discount
+        // proportionally across invoice items
+        const itemDiscount =
+          subtotal > 0
+            ? (itemSubtotal / subtotal) *
+            discountValue
+            : 0;
+
+        const itemTaxableAmount =
+          Math.max(
+            0,
+            itemSubtotal - itemDiscount
+          );
+
+        const itemTax =
+          (itemTaxableAmount * taxRate) / 100;
+
+        return sum + itemTax;
+      },
+      0
+    );
+  }, [
+    calculatedItems,
+    subtotal,
+    discountValue,
+    taxableAmount,
+  ]);
 
   /* =======================================================
      TOTAL
@@ -873,14 +926,11 @@ const EditInvoice = () => {
   const total = useMemo(() => {
     return Math.max(
       0,
-      subtotal +
-      taxTotal -
-      discountValue
+      taxableAmount + taxTotal
     );
   }, [
-    subtotal,
+    taxableAmount,
     taxTotal,
-    discountValue,
   ]);
 
   /* =======================================================
@@ -1615,19 +1665,22 @@ const EditInvoice = () => {
                         <option value="">
                           Select item
                         </option>
+                        {products.map((product) => {
+                          const isSelected =
+                            String(product.id) ===
+                            String(item.productId);
 
-                        {products.map(
-                          (product) => (
+                          return (
                             <option
                               key={product.id}
                               value={product.id}
                             >
-                              {getProductName(
-                                product
-                              )}
+                              {isSelected && item.productName
+                                ? item.productName
+                                : getProductName(product)}
                             </option>
-                          )
-                        )}
+                          );
+                        })}
 
                       </select>
 

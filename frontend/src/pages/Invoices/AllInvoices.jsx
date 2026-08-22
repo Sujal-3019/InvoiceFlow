@@ -95,6 +95,7 @@ const AllInvoices = () => {
   const { success, error } = useToast();
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [sendingInvoiceId, setSendingInvoiceId] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState(
     searchParams.get("search") || ""
@@ -430,102 +431,45 @@ const AllInvoices = () => {
     success(`Invoice duplicated: ${invoice.id}-COPY`);
   };
 
-  const handleSend = (invoice) => {
-    if (!invoice.email) {
-      error("This client does not have an email address.");
-      return;
-    }
-
-    const subject = `Invoice ${invoice.invoiceNumber}`;
-
-    const body = `Hello ${invoice.client},
-
-Please find your invoice details below.
-
-Invoice Number: ${invoice.invoiceNumber}
-Invoice Date: ${invoice.date ? formatDate(invoice.date) : "-"}
-Due Date: ${invoice.dueDate ? formatDate(invoice.dueDate) : "-"}
-Amount: ${formatCurrency(
-      invoice.amount,
-      invoice.currency
-    )}
-Payment Status: ${invoice.paymentStatus || "Unpaid"}
-
-Thank you for your business.
-
-Regards,
-Your Company`;
-
-    const mailtoUrl =
-      `mailto:${encodeURIComponent(invoice.email)}` +
-      `?subject=${encodeURIComponent(subject)}` +
-      `&body=${encodeURIComponent(body)}`;
-
-    window.location.href = mailtoUrl;
-
-    success(
-      `Email prepared for ${invoice.email}`
-    );
-
-    setOpenActionMenu(null);
-  };
-
-  const handleDownload = async (invoice) => {
+  const handleSend = async (invoice) => {
     try {
-      // Generate the PDF
-      await api.post(`/invoices/${invoice.id}/pdf`);
+      // Start loading for this specific invoice
+      setSendingInvoiceId(invoice.id);
 
-      // Download the generated PDF
-      const response = await api.get(
-        `/invoices/${invoice.id}/pdf`,
-        {
-          responseType: "blob",
-        }
+      const response = await api.post(
+        `/invoices/${invoice.id}/send`
       );
 
-      const blob = new Blob(
-        [response.data],
-        {
-          type: "application/pdf",
-        }
+      success("Invoice sent successfully");
+
+      // Update invoice immediately in frontend
+      setInvoices((prevInvoices) =>
+        prevInvoices.map((item) =>
+          item.id === invoice.id
+            ? {
+              ...item,
+              status: "sent",
+            }
+            : item
+        )
       );
 
-      const url = window.URL.createObjectURL(blob);
+      setOpenActionMenu(null);
 
-      const link = document.createElement("a");
-
-      link.href = url;
-      link.download = `invoice_${invoice.invoiceNumber}.pdf`;
-
-      document.body.appendChild(link);
-
-      link.click();
-
-      link.remove();
-
-      window.URL.revokeObjectURL(url);
-
-      success(
-        `Invoice ${invoice.invoiceNumber} downloaded successfully`
-      );
     } catch (err) {
-      console.error(
-        "FAILED TO DOWNLOAD INVOICE:",
-        err
-      );
-
-      console.error(
-        "DOWNLOAD RESPONSE:",
-        err?.response
-      );
+      console.error("Failed to send invoice:", err);
 
       error(
         err?.response?.data?.detail ||
-        err?.response?.data?.message ||
-        "Unable to download invoice."
+        "Failed to send invoice."
       );
+
+    } finally {
+      // Stop loading whether request succeeds or fails
+      setSendingInvoiceId(null);
     }
   };
+
   const handleExport = () => {
     try {
       if (filteredInvoices.length === 0) {
@@ -922,11 +866,37 @@ Your Company`;
                             {/* Send */}
                             <button
                               type="button"
-                              onClick={() => handleSend(invoice)}
-                              title="Send invoice"
-                              className="p-2 text-gray-500 hover:text-primary hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSend(invoice);
+                              }}
+                              disabled={sendingInvoiceId === invoice.id}
+                              title={sendingInvoiceId === invoice.id ? "Sending invoice..." : "Send invoice"}
+                              className="p-2 text-gray-500 hover:text-primary hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              <FiSend size={16} />
+                              {sendingInvoiceId === invoice.id ? (
+                                <svg
+                                  className="animate-spin h-4 w-4"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                >
+                                  <circle
+                                    className="opacity-25"
+                                    cx="12"
+                                    cy="12"
+                                    r="10"
+                                    stroke="currentColor"
+                                    strokeWidth="4"
+                                  />
+                                  <path
+                                    className="opacity-75"
+                                    fill="currentColor"
+                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                  />
+                                </svg>
+                              ) : (
+                                <FiSend size={16} />
+                              )}
                             </button>
 
                             {/* Download */}

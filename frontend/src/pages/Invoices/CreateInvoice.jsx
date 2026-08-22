@@ -376,8 +376,8 @@ const CreateInvoice = () => {
     ----------------------------------------------- */
 
     company: {
-      name: 'ryucore',
-      email: 'xyz',
+      name: '',
+      email: '',
       phone: '',
       address: '',
       city: '',

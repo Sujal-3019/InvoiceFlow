@@ -441,6 +441,13 @@ const normalizeItems = (invoice) => {
       id: item.id || index,
 
       description: firstValue(
+        item.description,
+        item.name,
+        item.item_name,
+        item.title,
+        "Item"
+      ),
+      name: firstValue(
         item.name,
         item.description,
         item.item_name,
@@ -728,6 +735,8 @@ const InvoiceDetails = () => {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
+  const [sendingAction, setSendingAction] = useState(null);
+
   /* =======================================================
      FETCH INVOICE
   ======================================================= */
@@ -961,6 +970,70 @@ const InvoiceDetails = () => {
     }
   };
 
+
+  /* =======================================================
+   SEND INVOICE
+  ======================================================= */
+
+  const handleSendInvoice = async () => {
+    // Prevent duplicate clicks
+    if (sendingAction) return;
+
+    try {
+      setSendingAction("invoice");
+
+      // Send invoice through backend
+      await api.post(`/invoices/${invoice.id}/send`);
+
+      success("Invoice sent successfully.");
+    } catch (err) {
+      console.error(
+        "FAILED TO SEND INVOICE:",
+        err
+      );
+
+      error(
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        "Failed to send invoice."
+      );
+    } finally {
+      setSendingAction(null);
+    }
+  };
+
+  const handleSendReminder = async () => {
+    // Prevent duplicate clicks
+    if (sendingAction) return;
+
+    try {
+      setSendingAction("reminder");
+
+      const response =
+        await api.invoices.sendReminders([
+          invoice.id,
+        ]);
+
+      success(
+        response?.data?.message ||
+        "Payment reminder sent successfully."
+      );
+
+    } catch (err) {
+      console.error(
+        "SEND REMINDER ERROR:",
+        err
+      );
+
+      error(
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        "Unable to send payment reminder."
+      );
+    } finally {
+      setSendingAction(null);
+    }
+  };
   /* =======================================================
      EDIT
   ======================================================= */
@@ -1113,6 +1186,30 @@ const InvoiceDetails = () => {
             leftIcon={<FiDownload />}
           >
             Download
+          </Button>
+
+          {(
+            paymentStatus.label === "Unpaid" ||
+            paymentStatus.label === "Partially Paid"
+          ) && 
+          (
+              <Button
+                variant="secondary"
+                onClick={handleSendReminder}
+                loading={sendingAction === "reminder"}
+                disabled={!!sendingAction}
+              >
+                Send Reminder
+              </Button>
+            )}
+
+          <Button
+            variant="secondary"
+            onClick={handleSendInvoice}
+            loading={sendingAction === "invoice"}
+            disabled={!!sendingAction}
+          >
+            Send
           </Button>
 
           <Button
@@ -1539,7 +1636,7 @@ const InvoiceDetails = () => {
                   </th>
 
                   <th className="text-left py-4 px-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Description
+                    Product Name
                   </th>
 
                   <th className="text-right py-4 px-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -1579,7 +1676,7 @@ const InvoiceDetails = () => {
                         <td className="py-4 px-3">
 
                           <p className="font-medium text-gray-900 dark:text-gray-100">
-                            {item.description}
+                            {item.name}
                           </p>
 
                         </td>
