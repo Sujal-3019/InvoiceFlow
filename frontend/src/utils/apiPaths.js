@@ -6,6 +6,7 @@ const apiPaths = {
     register: '/auth/register',
     logout: '/auth/logout',
     refreshToken: '/auth/refresh',
+    setPassword: "/auth/set-password",
     forgotPassword: '/auth/forgot-password',
     resetPassword: '/auth/reset-password',
     verifyEmail: '/auth/verify-email',

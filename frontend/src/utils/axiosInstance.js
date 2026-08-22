@@ -97,9 +97,14 @@ axiosInstance.interceptors.response.use(
 
       // Handle 401 - Unauthorized
       if (status === 401) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        window.location.href = '/login';
+        // Do NOT redirect when the login request itself fails.
+        // Login.jsx will handle the error and show the proper message.
+        if (error.config?.url !== '/auth/login') {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+
+          window.location.href = '/login';
+        }
       }
 
       // Handle 403 - Forbidden
@@ -355,6 +360,11 @@ export const api = {
 
     send: (id) =>
       api.post(`/invoices/${id}/send`),
+
+    sendReminders: (invoiceIds) =>
+      api.post('/invoices/reminders/send', {
+        invoice_ids: invoiceIds,
+      }),
 
     download: (id) =>
       api.get(`/invoices/${id}/download`, {
