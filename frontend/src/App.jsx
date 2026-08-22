@@ -22,8 +22,8 @@ import { Toast } from './components/ui';
 
 import LandingPage from './pages/LandingPage/LandingPage';
 import Login from './pages/Auth/Login';
-import SignUp from './pages/auth/SignUp';
-import GooglePasswordSetup from './pages/auth/GooglePasswordSetup';
+import SignUp from './pages/Auth/SignUp';
+import GooglePasswordSetup from './pages/Auth/GooglePasswordSetup';
 import Dashboard from './pages/Dashboard/Dashboard';
 
 import Products from './pages/Products/Products';
@@ -38,6 +38,10 @@ import ClientInvoices from './pages/Clients/ClientInvoices';
 
 import ProfilePage from './pages/Profile/ProfilePage';
 import CompanyManager from './components/company/CompanyManager';
+
+import ResetPassword from './pages/Auth/ResetPassword';
+import ForgotPassword from './pages/Auth/ForgotPassword';
+import ChangePassword from './pages/Auth/ChangePassword';
 
 // =========================================================
 // PROTECTED ROUTE
@@ -160,6 +164,33 @@ function AppRoutes() {
           <PublicRoute>
             <GooglePasswordSetup />
           </PublicRoute>
+        }
+      />
+
+      <Route
+        path="/reset-password"
+        element={
+          <PublicRoute>
+            <ResetPassword />
+          </PublicRoute>
+        }
+      />
+
+      <Route
+        path="/forgot-password"
+        element={
+          <PublicRoute>
+            <ForgotPassword />
+          </PublicRoute>
+        }
+      />
+
+      <Route
+        path="/change-password"
+        element={
+          <ProtectedRoute>
+            <ChangePassword />
+          </ProtectedRoute>
         }
       />
 
