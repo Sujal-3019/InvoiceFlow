@@ -109,6 +109,7 @@ const Dashboard = () => {
 
   const [exchangeRates, setExchangeRates] = useState({});
   const [showReminderModal, setShowReminderModal] = useState(false);
+  const [sendingReminders, setSendingReminders] = useState(false);
   const [selectedReminderInvoices, setSelectedReminderInvoices] = useState([]);
   const [selectedReminderClient, setSelectedReminderClient] = useState(null);
 
@@ -568,53 +569,48 @@ const Dashboard = () => {
     selectedReminderInvoices,
   ]);
 
-  const handleSendReminder = () => {
-    if (
-      selectedReminderInvoices.length === 0
-    ) {
-      error(
-        "Please select at least one invoice."
-      );
+  const handleSendReminder = async () => {
+    // --------------------------------------------------
+    // PREVENT DOUBLE CLICK
+    // --------------------------------------------------
+
+    if (sendingReminders) {
       return;
     }
 
-    const selectedInvoices =
-      reminderInvoices.filter((invoice) =>
-        selectedReminderInvoices.includes(
-          invoice.reminderId
-        )
-      );
+    // --------------------------------------------------
+    // VALIDATE SELECTION
+    // --------------------------------------------------
 
-    // Group invoices by client email
-    const groupedByEmail = {};
-
-    selectedInvoices.forEach((invoice) => {
-      if (!invoice.reminderEmail) {
-        return;
-      }
-
-      if (!groupedByEmail[invoice.reminderEmail]) {
-        groupedByEmail[invoice.reminderEmail] = [];
-      }
-
-      groupedByEmail[invoice.reminderEmail].push(
-        invoice
-      );
-    });
-
-    const invoicesWithoutEmail =
-      selectedInvoices.filter(
-        (invoice) => !invoice.reminderEmail
-      );
-
-    if (
-      Object.keys(groupedByEmail).length === 0
-    ) {
-      error(
-        "None of the selected clients have an email address."
-      );
+    if (selectedReminderInvoices.length === 0) {
+      error("Please select at least one invoice.");
       return;
     }
+
+    // --------------------------------------------------
+    // GET SELECTED INVOICES
+    // --------------------------------------------------
+
+    const selectedInvoices = reminderInvoices.filter((invoice) =>
+      selectedReminderInvoices.includes(invoice.reminderId)
+    );
+
+    // --------------------------------------------------
+    // CHECK CLIENT EMAILS
+    // --------------------------------------------------
+
+    const invoicesWithoutEmail = selectedInvoices.filter(
+      (invoice) => !invoice.reminderEmail
+    );
+
+    if (invoicesWithoutEmail.length === selectedInvoices.length) {
+      error("None of the selected clients have an email address.");
+      return;
+    }
+
+    // --------------------------------------------------
+    // WARNING FOR INVOICES WITHOUT EMAIL
+    // --------------------------------------------------
 
     if (invoicesWithoutEmail.length > 0) {
       console.warn(
@@ -623,95 +619,75 @@ const Dashboard = () => {
       );
     }
 
-    /*
-     * For now, open the email composer for
-     * the first client.
-     *
-     * If multiple clients are selected,
-     * we'll handle each client separately.
-     */
+    // --------------------------------------------------
+    // GET VALID INVOICE IDs
+    // --------------------------------------------------
 
-    const [email, clientInvoices] =
-      Object.entries(groupedByEmail)[0];
+    const invoiceIds = selectedInvoices
+      .filter((invoice) => invoice.reminderEmail)
+      .map((invoice) => invoice.reminderId);
 
-    const clientName =
-      clientInvoices[0].reminderClientName ||
-      "Customer";
+    if (invoiceIds.length === 0) {
+      error("No valid invoices selected.");
+      return;
+    }
 
-    const invoiceDetails =
-      clientInvoices
-        .map(
-          (invoice) => `
-Invoice: ${invoice.reminderInvoiceNumber}
-Invoice Date: ${invoice.invoice_date
-              ? new Date(
-                invoice.invoice_date
-              ).toLocaleDateString("en-IN")
-              : "-"
-            }
-Due Date: ${invoice.due_date
-              ? new Date(
-                invoice.due_date
-              ).toLocaleDateString("en-IN")
-              : "No Due Date"
-            }
-Amount Due: ${formatCurrency(
-              invoice.reminderPending,
-              invoice.reminderCurrency
-            )}
-Payment Status: ${invoice.reminderStatus
-            }
-`
-        )
-        .join("\n-------------------------\n");
+    // --------------------------------------------------
+    // START LOADING
+    // --------------------------------------------------
 
-    const totalPending = clientInvoices.reduce(
-      (sum, invoice) =>
-        sum + invoice.reminderPending,
-      0
-    );
+    setSendingReminders(true);
 
-    const subject =
-      clientInvoices.length === 1
-        ? `Payment Reminder - Invoice ${clientInvoices[0].reminderInvoiceNumber}`
-        : `Payment Reminder - Outstanding Invoices`;
+    try {
+      // ------------------------------------------------
+      // SEND PAYMENT REMINDERS
+      // ------------------------------------------------
 
-    const body = `Hello ${clientName},
+      const response = await api.invoices.sendReminders(invoiceIds);
 
-This is a friendly reminder regarding your outstanding invoice(s).
+      // ------------------------------------------------
+      // SUCCESS
+      // ------------------------------------------------
 
-${invoiceDetails}
+      success(
+        response?.data?.message ||
+        "Payment reminders sent successfully."
+      );
 
-Total Amount Due: ${formatCurrency(
-      totalPending,
-      clientInvoices[0].reminderCurrency
-    )}
+      // ------------------------------------------------
+      // CLOSE MODAL ONLY AFTER REQUEST FINISHES
+      // ------------------------------------------------
 
-Kindly arrange the payment at your earliest convenience.
+      setShowReminderModal(false);
+      setSelectedReminderClient(null);
+      setSelectedReminderInvoices([]);
 
-If you have already made the payment, please ignore this reminder.
+    } catch (err) {
+      // ------------------------------------------------
+      // ERROR
+      // ------------------------------------------------
 
-Thank you for your business.
+      console.error("SEND REMINDER ERROR:", err);
+      console.error("SEND REMINDER RESPONSE:", err?.response);
+      console.error(
+        "SEND REMINDER RESPONSE DATA:",
+        err?.response?.data
+      );
 
-Regards,
-${user?.name || "Your Company"}`;
+      error(
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        "Unable to send payment reminders."
+      );
 
-    const mailtoUrl =
-      `mailto:${encodeURIComponent(email)}` +
-      `?subject=${encodeURIComponent(subject)}` +
-      `&body=${encodeURIComponent(body)}`;
+    } finally {
+      // ------------------------------------------------
+      // STOP LOADING
+      // ------------------------------------------------
 
-    window.location.href = mailtoUrl;
-
-    success(
-      `Payment reminder prepared for ${email}`
-    );
-
-    setShowReminderModal(false);
-    setSelectedReminderInvoices([]);
+      setSendingReminders(false);
+    }
   };
-
-
 
   // ==========================================================
   // INVOICE STATUS CHART
@@ -1708,12 +1684,18 @@ ${user?.name || "Your Company"}`;
 
               <button
                 type="button"
+                disabled={sendingReminders}
                 onClick={() => {
+                  if (sendingReminders) return;
+
                   setShowReminderModal(false);
                   setSelectedReminderClient(null);
                   setSelectedReminderInvoices([]);
                 }}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl"
+                className={`text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl ${sendingReminders
+                    ? "opacity-50 cursor-not-allowed"
+                    : ""
+                  }`}
               >
                 ×
               </button>
@@ -1798,8 +1780,8 @@ ${user?.name || "Your Company"}`;
                           <div
                             key={client.clientId}
                             className={`p-4 rounded-xl border transition-all ${clientFullySelected
-                                ? "border-primary bg-primary/5"
-                                : "border-gray-200 dark:border-gray-700"
+                              ? "border-primary bg-primary/5"
+                              : "border-gray-200 dark:border-gray-700"
                               }`}
                           >
 
@@ -2028,8 +2010,8 @@ ${user?.name || "Your Company"}`;
                               )
                             }
                             className={`p-4 rounded-xl border cursor-pointer transition-all ${selected
-                                ? "border-primary bg-primary/5"
-                                : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+                              ? "border-primary bg-primary/5"
+                              : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
                               }`}
                           >
 
@@ -2175,6 +2157,7 @@ ${user?.name || "Your Company"}`;
 
                   <Button
                     variant="secondary"
+                    disabled={sendingReminders}
                     onClick={() => {
                       setShowReminderModal(false);
                       setSelectedReminderClient(null);
@@ -2186,15 +2169,21 @@ ${user?.name || "Your Company"}`;
 
                   <Button
                     leftIcon={
-                      <FiSend size={16} />
+                      sendingReminders ? (
+                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <FiSend size={16} />
+                      )
                     }
                     onClick={handleSendReminder}
                     disabled={
-                      selectedReminderInvoices.length ===
-                      0
+                      selectedReminderInvoices.length === 0 ||
+                      sendingReminders
                     }
                   >
-                    Send Reminder
+                    {sendingReminders
+                      ? "Sending..."
+                      : "Send Reminder"}
                   </Button>
 
                 </div>
