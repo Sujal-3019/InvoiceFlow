@@ -92,6 +92,12 @@ class User(Base):
         foreign_keys="[Company.user_id]",
     )
 
+    password_reset_tokens = relationship(
+        "PasswordResetToken",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
 
 # ============================================================
 # COMPANY
@@ -732,6 +738,16 @@ class InvoiceItem(Base):
     # HISTORICAL ITEM INFORMATION
     # ========================================================
 
+    product_name = Column(
+        String,
+        nullable=True,
+    )
+
+    name = Column(
+        String,
+        nullable=False,
+    )
+
     description = Column(
         Text,
         nullable=True,
@@ -791,4 +807,80 @@ class InvoiceItem(Base):
     product = relationship(
         "Product",
         back_populates="invoice_items",
+    )
+
+# ============================================================
+# PASSWORD RESET TOKEN
+# ============================================================
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    # ========================================================
+    # USER
+    # ========================================================
+
+    user_id = Column(
+        Integer,
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    # ========================================================
+    # TOKEN
+    # ========================================================
+
+    token_hash = Column(
+        String(128),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    # ========================================================
+    # EXPIRATION
+    # ========================================================
+
+    expires_at = Column(
+        DateTime,
+        nullable=False,
+        index=True,
+    )
+
+    # ========================================================
+    # TOKEN STATUS
+    # ========================================================
+
+    used = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
+    # ========================================================
+    # CREATED
+    # ========================================================
+
+    created_at = Column(
+        DateTime,
+        nullable=False,
+    )
+
+    # ========================================================
+    # RELATIONSHIP
+    # ========================================================
+
+    user = relationship(
+        "User",
+        back_populates="password_reset_tokens",
     )
