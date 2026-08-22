@@ -56,8 +56,10 @@ from ..schemas import (
     InvoiceCreate,
     InvoiceUpdate,
     InvoiceResponse,
+    InvoiceReminderRequest,
 )
 from ..security import get_current_user
+from ..email_utils import send_invoice_email , send_payment_reminder_email
 
 
 router = APIRouter(
@@ -1136,15 +1138,15 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
     ):
 
         quantity = Decimal(
-            item.quantity
+            item.quantity or 0
         )
 
         unit_price = Decimal(
-            item.unit_price
+            item.unit_price or 0
         )
 
         gst_percent = Decimal(
-            item.gst_percent
+            item.gst_percent or 0
         )
 
         tax_amount = Decimal(
@@ -1155,10 +1157,25 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
             item.line_total or 0
         )
 
-        description = (
-            item.description
-            or ""
-        )
+        # ====================================================
+        # ITEM NAME + DESCRIPTION
+        # ====================================================
+
+        item_name = item.name or ""
+        item_description = item.description or ""
+
+        if item_description:
+
+            product_content = (
+                f"<b>{safe(item_name)}</b><br/>"
+                f"<font size='7' color='#6B7280'>"
+                f"{safe(item_description)}"
+                f"</font>"
+            )
+
+        else:
+
+            product_content = safe(item_name)
 
         item_rows.append(
             [
@@ -1168,7 +1185,7 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
                 ),
 
                 Paragraph(
-                    safe(description),
+                    product_content,
                     normal_style,
                 ),
 
@@ -2078,11 +2095,9 @@ def create_invoice(
 
         invoice_item = InvoiceItem(
             product_id=product.id,
-            description=(
-                product.description
-                if product.description
-                else product.name
-            ),
+            product_name=product.name,
+            name=product.name,
+            description=product.description,
             quantity=quantity,
             unit_price=unit_price,
             gst_percent=gst_percent,
@@ -2527,6 +2542,535 @@ def download_invoice_pdf(
 
 
 # ============================================================
+# SEND PAYMENT REMINDERS
+# ============================================================
+
+@router.post("/reminders/send")
+def send_payment_reminders(
+    reminder_data: InvoiceReminderRequest,
+    company_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+
+    # --------------------------------------------------------
+    # GET USER COMPANY
+    # --------------------------------------------------------
+
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+
+    company_id = company.id
+
+    # --------------------------------------------------------
+    # GET COMPANY NAME
+    # --------------------------------------------------------
+
+    company_name = (
+        company.business_name
+        or getattr(company, "company", None)
+        or "Your Company"
+    )
+
+    # --------------------------------------------------------
+    # GET SELECTED INVOICES
+    # --------------------------------------------------------
+
+    invoices = (
+        db.query(Invoice)
+        .options(
+            joinedload(Invoice.client)
+        )
+        .filter(
+            Invoice.id.in_(
+                reminder_data.invoice_ids
+            ),
+            Invoice.company_id == company_id,
+        )
+        .all()
+    )
+
+    # --------------------------------------------------------
+    # CHECK WHETHER INVOICES EXIST
+    # --------------------------------------------------------
+
+    if not invoices:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No invoices found.",
+        )
+
+    # --------------------------------------------------------
+    # CHECK FOR MISSING INVOICE IDs
+    # --------------------------------------------------------
+
+    found_ids = {
+        invoice.id
+        for invoice in invoices
+    }
+
+    missing_ids = [
+        invoice_id
+        for invoice_id in reminder_data.invoice_ids
+        if invoice_id not in found_ids
+    ]
+
+    if missing_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Invoice(s) not found: "
+                f"{missing_ids}"
+            ),
+        )
+
+    # --------------------------------------------------------
+    # GROUP INVOICES BY CLIENT EMAIL
+    # --------------------------------------------------------
+
+    grouped_by_email = {}
+
+    for invoice in invoices:
+
+        if not invoice.client:
+            continue
+
+        client_email = invoice.client.email
+
+        if not client_email:
+            continue
+
+        if client_email not in grouped_by_email:
+
+            grouped_by_email[client_email] = []
+
+        grouped_by_email[
+            client_email
+        ].append(invoice)
+
+    # --------------------------------------------------------
+    # CHECK EMAIL AVAILABILITY
+    # --------------------------------------------------------
+
+    if not grouped_by_email:
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "None of the selected invoices have "
+                "a client with an email address."
+            ),
+        )
+
+    # --------------------------------------------------------
+    # SEND REMINDERS
+    # --------------------------------------------------------
+
+    sent_to = []
+    failed = []
+
+    for (
+        client_email,
+        client_invoices,
+    ) in grouped_by_email.items():
+
+        try:
+
+            # ------------------------------------------------
+            # CLIENT NAME
+            # ------------------------------------------------
+
+            client = client_invoices[0].client
+
+            client_name = (
+                getattr(
+                    client,
+                    "name",
+                    None,
+                )
+                or getattr(
+                    client,
+                    "company_name",
+                    None,
+                )
+                or client_email.split("@")[0]
+            )
+
+            # ------------------------------------------------
+            # BUILD INVOICE DETAILS
+            # ------------------------------------------------
+
+            invoice_lines = []
+
+            pdf_attachments = []
+
+            total_pending = Decimal("0")
+
+            for invoice in client_invoices:
+
+                grand_total = Decimal(
+                    invoice.grand_total or 0
+                )
+
+                amount_paid = Decimal(
+                    invoice.amount_paid or 0
+                )
+
+                pending = max(
+                    Decimal("0"),
+                    grand_total - amount_paid,
+                )
+
+                total_pending += pending
+
+                # --------------------------------------------
+                # INVOICE DATE
+                # --------------------------------------------
+
+                invoice_date = (
+                    invoice.invoice_date.strftime(
+                        "%d/%m/%Y"
+                    )
+                    if invoice.invoice_date
+                    else "-"
+                )
+
+                # --------------------------------------------
+                # DUE DATE
+                # --------------------------------------------
+
+                due_date = (
+                    invoice.due_date.strftime(
+                        "%d/%m/%Y"
+                    )
+                    if invoice.due_date
+                    else "NO Due Date"
+                )
+
+                # --------------------------------------------
+                # PAYMENT STATUS
+                # --------------------------------------------
+
+                payment_status = (
+                    invoice.payment_status
+                    or "Unpaid"
+                )
+
+                invoice_lines.append(
+                    f"""
+Invoice Number: {invoice.invoice_number}
+Invoice Date: {invoice_date}
+Due Date: {due_date}
+Amount Due: {pending:.2f}
+Payment Status: {payment_status}
+"""
+                )
+
+
+                # ------------------------------------------------
+                # GENERATE INVOICE PDF
+                # ------------------------------------------------
+
+                try:
+
+                    pdf_bytes = generate_invoice_pdf(
+                        invoice
+                    )
+
+                except Exception as exc:
+
+                    print(
+                        "INVOICE PDF GENERATION ERROR:",
+                        repr(exc),
+                    )
+
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=(
+                            f"Could not generate PDF for "
+                            f"invoice {invoice.invoice_number}."
+                        ),
+                    )
+
+                pdf_filename = (
+                    f"invoice_"
+                    f"{invoice.invoice_number}"
+                    f".pdf"
+                )
+
+                pdf_attachments.append(
+                    (
+                        pdf_bytes,
+                        pdf_filename,
+                    )
+                )
+
+            # ------------------------------------------------
+            # JOIN INVOICE DETAILS
+            # ------------------------------------------------
+
+            invoice_details = (
+                "\n"
+                "-------------------------\n"
+            ).join(
+                invoice_lines
+            )
+
+            # ------------------------------------------------
+            # SEND EMAIL
+            # ------------------------------------------------
+
+            send_payment_reminder_email(
+                recipient_email=client_email,
+                client_name=client_name,
+                invoice_details=invoice_details,
+                total_pending=f"{total_pending:.2f}",
+                company_name=company_name,
+                pdf_attachments=pdf_attachments,
+            )
+
+            sent_to.append(
+                client_email
+            )
+
+        except Exception as exc:
+
+            print(
+                "PAYMENT REMINDER EMAIL ERROR:",
+                repr(exc),
+            )
+
+            failed.append(
+                client_email
+            )
+
+    # --------------------------------------------------------
+    # CHECK WHETHER ANY EMAIL WAS SENT
+    # --------------------------------------------------------
+
+    if not sent_to:
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Unable to send payment reminders."
+            ),
+        )
+
+    # --------------------------------------------------------
+    # SUCCESS RESPONSE
+    # --------------------------------------------------------
+
+    return {
+        "message": (
+            "Payment reminder(s) sent successfully."
+        ),
+        "sent_to": sent_to,
+        "failed": failed,
+    }
+
+# ============================================================
+# SEND INVOICE BY EMAIL
+#
+# Generates the invoice PDF and sends it directly to the
+# client's email address as an attachment.
+# ============================================================
+
+@router.post(
+    "/{invoice_id}/send",
+)
+def send_invoice(
+    invoice_id: int,
+    company_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+
+    # --------------------------------------------------------
+    # GET USER COMPANY
+    # --------------------------------------------------------
+
+    company = get_user_company(
+        company_id=company_id,
+        current_user=current_user,
+        db=db,
+    )
+
+    company_id = company.id
+
+    # --------------------------------------------------------
+    # GET INVOICE
+    # --------------------------------------------------------
+
+    invoice = (
+        db.query(Invoice)
+        .options(
+            joinedload(Invoice.company),
+            joinedload(Invoice.client),
+            joinedload(Invoice.items),
+        )
+        .filter(
+            Invoice.id == invoice_id,
+            Invoice.company_id == company_id,
+        )
+        .first()
+    )
+
+    if not invoice:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found.",
+        )
+
+    # --------------------------------------------------------
+    # CHECK CLIENT
+    # --------------------------------------------------------
+
+    if not invoice.client:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This invoice does not have a client.",
+        )
+
+    client_email = invoice.client.email
+
+    if not client_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This client does not have an email address.",
+        )
+
+    # --------------------------------------------------------
+    # COMPANY NAME
+    # --------------------------------------------------------
+
+    company_name = (
+        company.business_name
+        or getattr(company, "company", None)
+        or "Your Company"
+    )
+
+    # --------------------------------------------------------
+    # CLIENT NAME
+    # --------------------------------------------------------
+
+    client_name = (
+        getattr(invoice.client, "name", None)
+        or getattr(invoice.client, "company_name", None)
+        or client_email.split("@")[0]
+    )
+
+    # --------------------------------------------------------
+    # GENERATE PDF
+    # --------------------------------------------------------
+
+    try:
+
+        pdf_bytes = generate_invoice_pdf(
+            invoice
+        )
+
+    except Exception as exc:
+
+        print(
+            "INVOICE PDF GENERATION ERROR:",
+            repr(exc),
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not generate invoice PDF.",
+        ) from exc
+
+    # --------------------------------------------------------
+    # PDF FILENAME
+    # --------------------------------------------------------
+
+    filename = (
+        f"invoice_"
+        f"{invoice.invoice_number}"
+        f".pdf"
+    )
+
+    # --------------------------------------------------------
+    # FORMAT EMAIL DATA
+    # --------------------------------------------------------
+
+    invoice_date = (
+        invoice.invoice_date.strftime("%d/%m/%Y")
+        if invoice.invoice_date
+        else "-"
+    )
+
+    due_date = (
+        invoice.due_date.strftime("%d/%m/%Y")
+        if invoice.due_date
+        else "-"
+    )
+
+    amount = str(
+        invoice.grand_total
+        if invoice.grand_total is not None
+        else "0"
+    )
+
+    payment_status = (
+        invoice.payment_status
+        or "Unpaid"
+    )
+
+    # --------------------------------------------------------
+    # SEND EMAIL
+    # --------------------------------------------------------
+
+    try:
+
+        send_invoice_email(
+            recipient_email=client_email,
+            invoice_number=invoice.invoice_number,
+            invoice_date=invoice_date,
+            due_date=due_date,
+            amount=amount,
+            payment_status=payment_status,
+            pdf_bytes=pdf_bytes,
+            pdf_filename=filename,
+            company_name=company_name,
+            client_name=client_name,
+        )
+        invoice.status = "sent"
+
+        db.commit()
+        db.refresh(invoice)
+
+    except Exception as exc:
+
+        print(
+            "INVOICE EMAIL ERROR:",
+            repr(exc),
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to send invoice email.",
+        ) from exc
+
+    # --------------------------------------------------------
+    # SUCCESS
+    # --------------------------------------------------------
+
+    return {
+        "message": "Invoice sent successfully.",
+        "invoice_id": invoice.id,
+        "invoice_number": invoice.invoice_number,
+        "recipient": client_email,
+        "filename": filename,
+    }
+
+
+# ============================================================
 # GET SINGLE INVOICE
 # ============================================================
 
@@ -2552,7 +3096,7 @@ def get_invoice(
         db.query(Invoice)
         .options(
             joinedload(Invoice.client),
-            joinedload(Invoice.items),
+            joinedload(Invoice.items).joinedload(InvoiceItem.product),
             joinedload(Invoice.company),
         )
         .filter(
@@ -3065,7 +3609,6 @@ def update_invoice(
         if item_id is not None:
 
             if item_id in submitted_existing_ids:
-
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=(
@@ -3074,12 +3617,9 @@ def update_invoice(
                     ),
                 )
 
-            existing_item = (
-                existing_items.get(item_id)
-            )
+            existing_item = existing_items.get(item_id)
 
             if not existing_item:
-
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=(
@@ -3088,12 +3628,11 @@ def update_invoice(
                     ),
                 )
 
-            submitted_existing_ids.add(
-                item_id
-            )
+            submitted_existing_ids.add(item_id)
 
             # ------------------------------------------------
-            # Existing item keeps historical price/GST.
+            # Existing item keeps historical price/GST/name/
+            # description.
             # ------------------------------------------------
 
             unit_price = money(
@@ -3106,30 +3645,23 @@ def update_invoice(
                 existing_item.gst_percent
             )
 
-            description = (
-                existing_item.description
-            )
-
             line_subtotal = money(
                 quantity * unit_price
             )
 
             subtotal += line_subtotal
 
+            # Only quantity changes here.
+            # Historical product information remains unchanged.
             existing_item.quantity = quantity
-            existing_item.unit_price = unit_price
-            existing_item.gst_percent = gst_percent
-            existing_item.description = description
 
         # ----------------------------------------------------
-        # NEW ITEM
+        # New item
         # ----------------------------------------------------
 
         else:
 
-            product_id = item_data[
-                "product_id"
-            ]
+            product_id = item_data["product_id"]
 
             product = (
                 db.query(Product)
@@ -3141,7 +3673,6 @@ def update_invoice(
             )
 
             if not product:
-
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=(
@@ -3151,7 +3682,6 @@ def update_invoice(
                 )
 
             if not product.is_active:
-
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=(
@@ -3160,22 +3690,12 @@ def update_invoice(
                     ),
                 )
 
-            # ------------------------------------------------
-            # New item uses current product price/GST.
-            # ------------------------------------------------
-
             unit_price = money(
                 Decimal(product.price)
             )
 
             gst_percent = Decimal(
                 product.gst_percent
-            )
-
-            description = (
-                product.description
-                if product.description
-                else product.name
             )
 
             line_subtotal = money(
@@ -3186,7 +3706,8 @@ def update_invoice(
 
             new_item = InvoiceItem(
                 product_id=product.id,
-                description=description,
+                product_name=product.name,
+                description=product.description,
                 quantity=quantity,
                 unit_price=unit_price,
                 gst_percent=gst_percent,
@@ -3194,10 +3715,7 @@ def update_invoice(
                 line_total=ZERO,
             )
 
-            invoice.items.append(
-                new_item
-            )
-
+            invoice.items.append(new_item)
     # --------------------------------------------------------
     # Remove existing items not submitted
     # --------------------------------------------------------
@@ -3630,6 +4148,10 @@ def delete_invoice(
 # INVOICE RESPONSE
 # ============================================================
 
+# ============================================================
+# INVOICE RESPONSE
+# ============================================================
+
 def invoice_to_response(
     invoice: Invoice,
 ):
@@ -3683,5 +4205,25 @@ def invoice_to_response(
         "payment_status": payment_status,
         "notes": invoice.notes,
         "terms": invoice.terms,
-        "items": invoice.items,
+
+        # ----------------------------------------------------
+        # INVOICE ITEMS
+        # ----------------------------------------------------
+        "items": [
+            {
+                "id": item.id,
+                "invoice_id": item.invoice_id,
+                "product_id": item.product_id,
+
+                # Get product name from Product table
+                "name": item.name,
+                "description": item.description,
+                "quantity": item.quantity,
+                "unit_price": item.unit_price,
+                "gst_percent": item.gst_percent,
+                "tax_amount": item.tax_amount,
+                "line_total": item.line_total,
+            }
+            for item in invoice.items
+        ],
     }
