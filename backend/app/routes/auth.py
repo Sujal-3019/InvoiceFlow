@@ -6,8 +6,14 @@ from google.oauth2 import id_token
 from google.auth.transport import requests
 
 from ..database import get_db
-from ..models import User, Company
-from ..schemas import UserCreate, UserLogin, SetPassword
+from ..models import User, Company , PasswordResetToken
+from ..schemas import UserCreate, UserLogin, SetPassword , ForgotPasswordRequest,  ResetPasswordRequest
+import secrets
+import hashlib
+
+from datetime import datetime, timedelta
+
+from ..email_utils import send_password_reset_email
 from ..security import (
     hash_password,
     verify_password,
@@ -377,6 +383,227 @@ def register(
         "message": "User created",
     }
 
+# ============================================================
+# FORGOT PASSWORD
+# ============================================================
+
+@router.post("/forgot-password")
+def forgot_password(
+    data: ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    # ========================================================
+    # FIND USER
+    # ========================================================
+
+    db_user = (
+        db.query(User)
+        .filter(User.email == data.email)
+        .first()
+    )
+
+    # ========================================================
+    # GENERIC RESPONSE
+    # ========================================================
+
+    generic_message = (
+        "If an account exists with this email, "
+        "a password reset link has been sent."
+    )
+
+    if not db_user:
+        return {
+            "message": generic_message,
+        }
+
+    # ========================================================
+    # REMOVE OLD UNUSED TOKENS
+    # ========================================================
+
+    db.query(PasswordResetToken).filter(
+        PasswordResetToken.user_id == db_user.id,
+        PasswordResetToken.used == False,
+    ).delete(
+        synchronize_session=False,
+    )
+
+    # ========================================================
+    # GENERATE RESET TOKEN
+    # ========================================================
+
+    reset_token = secrets.token_urlsafe(32)
+
+    # ========================================================
+    # HASH TOKEN
+    # ========================================================
+
+    token_hash = hashlib.sha256(
+        reset_token.encode("utf-8")
+    ).hexdigest()
+
+    # ========================================================
+    # EXPIRATION
+    # ========================================================
+
+    expires_at = datetime.utcnow() + timedelta(
+        minutes=15
+    )
+
+    # ========================================================
+    # SAVE TOKEN
+    # ========================================================
+
+    reset_record = PasswordResetToken(
+        user_id=db_user.id,
+        token_hash=token_hash,
+        expires_at=expires_at,
+        used=False,
+        created_at=datetime.utcnow(),
+    )
+
+    db.add(reset_record)
+    db.commit()
+
+    # ========================================================
+    # SEND EMAIL
+    # ========================================================
+
+    try:
+
+        send_password_reset_email(
+            recipient_email=db_user.email,
+            reset_token=reset_token,
+        )
+
+    except Exception as e:
+
+        print(
+            "PASSWORD RESET EMAIL ERROR:",
+            repr(e),
+        )
+
+        db.delete(reset_record)
+        db.commit()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to send password reset email",
+        )
+
+    # ========================================================
+    # RESPONSE
+    # ========================================================
+
+    return {
+        "message": generic_message,
+    }
+
+
+# ============================================================
+# RESET PASSWORD
+# ============================================================
+
+@router.post("/reset-password")
+def reset_password(
+    data: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    # ========================================================
+    # VALIDATE PASSWORD
+    # ========================================================
+
+    if len(data.password) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 8 characters",
+        )
+
+    if data.password != data.confirm_password:
+        raise HTTPException(
+            status_code=400,
+            detail="Passwords do not match",
+        )
+
+    # ========================================================
+    # HASH THE TOKEN
+    # ========================================================
+
+    token_hash = hashlib.sha256(
+        data.token.encode("utf-8")
+    ).hexdigest()
+
+    # ========================================================
+    # FIND RESET TOKEN
+    # ========================================================
+
+    reset_record = (
+        db.query(PasswordResetToken)
+        .filter(
+            PasswordResetToken.token_hash == token_hash,
+            PasswordResetToken.used == False,
+        )
+        .first()
+    )
+
+    # ========================================================
+    # CHECK TOKEN
+    # ========================================================
+
+    if not reset_record:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired reset link",
+        )
+
+    # ========================================================
+    # CHECK EXPIRATION
+    # ========================================================
+
+    if reset_record.expires_at < datetime.utcnow():
+        raise HTTPException(
+            status_code=400,
+            detail="Reset link has expired",
+        )
+
+    # ========================================================
+    # FIND USER
+    # ========================================================
+
+    db_user = (
+        db.query(User)
+        .filter(User.id == reset_record.user_id)
+        .first()
+    )
+
+    if not db_user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found",
+        )
+
+    # ========================================================
+    # UPDATE PASSWORD
+    # ========================================================
+
+    db_user.password = hash_password(
+        data.password
+    )
+
+    # ========================================================
+    # MARK TOKEN AS USED
+    # ========================================================
+
+    reset_record.used = True
+
+    # ========================================================
+    # SAVE CHANGES
+    # ========================================================
+
+    db.commit()
+
+    return {
+        "message": "Password reset successfully",
+    }
 
 # ============================================================
 # LOGIN
