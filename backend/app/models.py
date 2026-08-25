@@ -382,6 +382,12 @@ class Client(Base):
         nullable=True,
     )
 
+    phone_country = Column(
+        String(5),
+        nullable=False,
+        default="IN"
+    )
+
     gst_number = Column(
         String,
         nullable=True,
