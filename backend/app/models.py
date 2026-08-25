@@ -57,6 +57,12 @@ class User(Base):
         nullable=True,
     )
 
+    email_verified = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
     # --------------------------------------------------------
     # ACTIVE COMPANY
     #
@@ -94,6 +100,12 @@ class User(Base):
 
     password_reset_tokens = relationship(
         "PasswordResetToken",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+    email_verification_tokens = relationship(
+        "EmailVerificationToken",
         back_populates="user",
         cascade="all, delete-orphan",
     )
@@ -883,4 +895,80 @@ class PasswordResetToken(Base):
     user = relationship(
         "User",
         back_populates="password_reset_tokens",
+    )
+
+# ============================================================
+# EMAIL VERIFICATION TOKEN
+# ============================================================
+
+class EmailVerificationToken(Base):
+    __tablename__ = "email_verification_tokens"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    # ========================================================
+    # USER
+    # ========================================================
+
+    user_id = Column(
+        Integer,
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    # ========================================================
+    # TOKEN
+    # ========================================================
+
+    token_hash = Column(
+        String(128),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    # ========================================================
+    # EXPIRATION
+    # ========================================================
+
+    expires_at = Column(
+        DateTime,
+        nullable=False,
+        index=True,
+    )
+
+    # ========================================================
+    # TOKEN STATUS
+    # ========================================================
+
+    used = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
+    # ========================================================
+    # CREATED
+    # ========================================================
+
+    created_at = Column(
+        DateTime,
+        nullable=False,
+    )
+
+    # ========================================================
+    # RELATIONSHIP
+    # ========================================================
+
+    user = relationship(
+        "User",
+        back_populates="email_verification_tokens",
     )
