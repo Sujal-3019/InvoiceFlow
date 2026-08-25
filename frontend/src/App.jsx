@@ -42,6 +42,8 @@ import CompanyManager from './components/company/CompanyManager';
 import ResetPassword from './pages/Auth/ResetPassword';
 import ForgotPassword from './pages/Auth/ForgotPassword';
 import ChangePassword from './pages/Auth/ChangePassword';
+import VerifyEmail from './pages/Auth/VerifyEmail';
+
 
 // =========================================================
 // PROTECTED ROUTE
@@ -181,6 +183,15 @@ function AppRoutes() {
         element={
           <PublicRoute>
             <ForgotPassword />
+          </PublicRoute>
+        }
+      />
+
+      <Route
+        path="/verify-email"
+        element={
+          <PublicRoute>
+            <VerifyEmail />
           </PublicRoute>
         }
       />
