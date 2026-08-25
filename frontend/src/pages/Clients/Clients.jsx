@@ -18,7 +18,7 @@ import {
 
 
 import { useToast } from "../../context/ToastContext";
-
+import { validatePhoneNumber } from "../../utils/validators";
 import Button from "../../components/ui/Button";
 import Input from "../../components/ui/Input";
 import Card from "../../components/ui/Card";
@@ -28,7 +28,7 @@ import Modal from "../../components/ui/Modal";
 import Dropdown from "../../components/ui/Dropdown";
 import SearchBar from "../../components/ui/SearchBar";
 import Pagination from "../../components/ui/Pagination";
-
+import PhoneInput from "../../components/ui/PhoneInput";
 // ==========================
 // API CLIENT MAPPER
 // ==========================
@@ -86,9 +86,9 @@ const mapClient = (client, invoices = []) => {
     contactPerson: client.contact_person,
     email: client.email,
     phone: client.phone,
+    phoneCountry: client.phone_country || "IN",
     gstNumber: client.gst_number,
     address: client.address,
-
     totalInvoices,
     totalRevenue,
     receivedAmount,
@@ -112,6 +112,7 @@ const Clients = () => {
 
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
+
 
   // ==========================
   // FETCH CLIENTS
@@ -242,6 +243,7 @@ const Clients = () => {
     contactPerson: "",
     email: "",
     phone: "",
+    phoneCountry: "IN",
     gstNumber: "",
     address: "",
   });
@@ -256,8 +258,18 @@ const Clients = () => {
     contactPerson: "",
     email: "",
     phone: "",
+    phoneCountry: "IN",
     gstNumber: "",
     address: "",
+  });
+
+  // ==========================
+  // Number Validator
+  // ==========================
+
+  const [phoneErrors, setPhoneErrors] = useState({
+    add: "",
+    edit: "",
   });
 
   // ==========================
@@ -319,6 +331,7 @@ const Clients = () => {
       contactPerson: client.contactPerson || "",
       email: client.email || "",
       phone: client.phone || "",
+      phoneCountry: client.phoneCountry || "IN",
       gstNumber: client.gstNumber || "",
       address: client.address || "",
     });
@@ -331,12 +344,27 @@ const Clients = () => {
   // ==========================
 
   const saveEditedClient = async () => {
+    const phoneError = validatePhoneNumber(
+      editClient.phone,
+      editClient.phoneCountry
+    );
+
+    if (phoneError) {
+      setPhoneErrors((prev) => ({
+        ...prev,
+        edit: phoneError,
+      }));
+
+      error(phoneError);
+      return;
+    }
     try {
       const clientData = {
         company_name: editClient.name,
         contact_person: editClient.contactPerson || "",
         email: editClient.email,
         phone: editClient.phone,
+        phone_country: editClient.phoneCountry,
         gst_number: editClient.gstNumber || "",
         address: editClient.address,
       };
@@ -431,12 +459,28 @@ const Clients = () => {
       return;
     }
 
+    const phoneError = validatePhoneNumber(
+      newClient.phone,
+      newClient.phoneCountry
+    );
+
+    if (phoneError) {
+      setPhoneErrors((prev) => ({
+        ...prev,
+        add: phoneError,
+      }));
+
+      error(phoneError);
+      return;
+    }
+
     try {
       const clientData = {
         company_name: newClient.name,
         contact_person: newClient.contactPerson || "",
         email: newClient.email,
         phone: newClient.phone || "",
+        phone_country: editClient.phoneCountry,
         gst_number: newClient.gstNumber || "",
         address: newClient.address || "",
       };
@@ -1153,16 +1197,42 @@ const Clients = () => {
           />
 
 
-          <Input
+          <PhoneInput
             label="Phone"
-            value={newClient.phone}
-            placeholder="9876543210"
-            onChange={(e) =>
-              setNewClient({
-                ...newClient,
-                phone: e.target.value
-              })
-            }
+            country={newClient.phoneCountry}
+            phone={newClient.phone}
+            error={phoneErrors.add}
+            onCountryChange={(country) => {
+              setNewClient((prev) => ({
+                ...prev,
+                phoneCountry: country,
+              }));
+
+              setPhoneErrors((prev) => ({
+                ...prev,
+                add: validatePhoneNumber(
+                  newClient.phone,
+                  country
+                ),
+              }));
+            }}
+            onPhoneChange={(value) => {
+              const cleanedValue = value
+                .replace(/\D/g, "");
+
+              setNewClient((prev) => ({
+                ...prev,
+                phone: cleanedValue,
+              }));
+
+              setPhoneErrors((prev) => ({
+                ...prev,
+                add: validatePhoneNumber(
+                  cleanedValue,
+                  newClient.phoneCountry
+                ),
+              }));
+            }}
           />
 
 
@@ -1374,15 +1444,42 @@ const Clients = () => {
           />
 
 
-          <Input
+          <PhoneInput
             label="Phone"
-            value={editClient.phone}
-            onChange={(e) =>
-              setEditClient({
-                ...editClient,
-                phone: e.target.value
-              })
-            }
+            country={editClient.phoneCountry}
+            phone={editClient.phone}
+            error={phoneErrors.edit}
+            onCountryChange={(country) => {
+              setEditClient((prev) => ({
+                ...prev,
+                phoneCountry: country,
+              }));
+
+              setPhoneErrors((prev) => ({
+                ...prev,
+                edit: validatePhoneNumber(
+                  editClient.phone,
+                  country
+                ),
+              }));
+            }}
+            onPhoneChange={(value) => {
+              const cleanedValue = value
+                .replace(/\D/g, "");
+
+              setEditClient((prev) => ({
+                ...prev,
+                phone: cleanedValue,
+              }));
+
+              setPhoneErrors((prev) => ({
+                ...prev,
+                edit: validatePhoneNumber(
+                  cleanedValue,
+                  editClient.phoneCountry
+                ),
+              }));
+            }}
           />
 
 
