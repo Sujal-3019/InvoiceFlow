@@ -44,6 +44,56 @@ def get_smtp_connection():
 
     return server, smtp_username
 
+# ============================================================
+# EMAIL VERIFICATION EMAIL
+# ============================================================
+
+def send_verification_email(
+    recipient_email: str,
+    verification_token: str,
+):
+    frontend_url = os.getenv(
+        "FRONTEND_URL",
+        "http://localhost:5173",
+    )
+
+    verification_link = (
+        f"{frontend_url}/verify-email"
+        f"?token={verification_token}"
+    )
+
+    message = EmailMessage()
+
+    message["Subject"] = "Verify Your InvoiceFlow Email"
+    message["From"] = os.getenv("SMTP_USERNAME")
+    message["To"] = recipient_email
+
+    message.set_content(
+        f"""
+Hello,
+
+Welcome to InvoiceFlow!
+
+Please verify your email address by clicking the link below:
+
+{verification_link}
+
+This verification link will expire in 15 minutes.
+
+If you did not create an InvoiceFlow account, you can safely ignore this email.
+
+Regards,
+InvoiceFlow Team
+"""
+    )
+
+    server, _ = get_smtp_connection()
+
+    try:
+        server.send_message(message)
+    finally:
+        server.quit()
+
 
 # ============================================================
 # PASSWORD RESET EMAIL
@@ -249,3 +299,4 @@ Sent via InvoiceFlow
     finally:
 
         server.quit()
+
