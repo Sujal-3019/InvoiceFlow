@@ -363,6 +363,7 @@ class ClientCreate(BaseModel):
     contact_person: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    phone_country: str = "IN"
     gst_number: Optional[str] = None
     address: Optional[str] = None
 
@@ -372,6 +373,7 @@ class ClientUpdate(BaseModel):
     contact_person: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    phone_country: Optional[str] = "IN"
     gst_number: Optional[str] = None
     address: Optional[str] = None
 
@@ -384,6 +386,7 @@ class ClientResponse(BaseModel):
     contact_person: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    phone_country: Optional[str] = None
     gst_number: Optional[str] = None
     address: Optional[str] = None
 
@@ -529,6 +532,7 @@ class InvoiceClientResponse(BaseModel):
     contact_person: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    phone_country: Optional[str] = None
     gst_number: Optional[str] = None
     address: Optional[str] = None
 
