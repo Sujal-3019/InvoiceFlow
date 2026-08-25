@@ -87,6 +87,7 @@ def create_client(
         contact_person=client_data.contact_person,
         email=client_data.email,
         phone=client_data.phone,
+        phone_country=client_data.phone_country,
         gst_number=client_data.gst_number,
         address=client_data.address,
     )
