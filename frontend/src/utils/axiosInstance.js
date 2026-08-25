@@ -97,9 +97,21 @@ axiosInstance.interceptors.response.use(
 
       // Handle 401 - Unauthorized
       if (status === 401) {
-        // Do NOT redirect when the login request itself fails.
-        // Login.jsx will handle the error and show the proper message.
-        if (error.config?.url !== '/auth/login') {
+        const publicAuthPaths = [
+          '/auth/login',
+          '/auth/register',
+          '/auth/google',
+          '/auth/verify-email',
+          '/auth/forgot-password',
+          '/auth/reset-password',
+        ];
+
+        const isPublicAuthRequest =
+          publicAuthPaths.includes(
+            error.config?.url
+          );
+
+        if (!isPublicAuthRequest) {
           localStorage.removeItem('token');
           localStorage.removeItem('user');
 
