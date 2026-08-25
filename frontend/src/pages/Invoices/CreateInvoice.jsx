@@ -25,7 +25,8 @@ import Select from '../../components/ui/Select';
 import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
 import Modal from '../../components/ui/Modal';
-
+import { validatePhoneNumber } from "../../utils/validators";
+import PhoneInput from '../../components/ui/PhoneInput';
 import {
   formatCurrency,
   formatDate,
@@ -135,6 +136,7 @@ const initialNewClient = {
   contact_person: '',
   email: '',
   phone: '',
+  phoneCountry: "IN",
   gst_number: '',
   address: '',
 };
@@ -158,6 +160,7 @@ const CreateInvoice = () => {
 
   const [clients, setClients] = useState([]);
   const [products, setProducts] = useState([]);
+  const [clientPhoneError, setClientPhoneError] = useState("");
 
   const [loadingData, setLoadingData] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -185,8 +188,11 @@ const CreateInvoice = () => {
   const [newClient, setNewClient] =
     useState(initialNewClient);
 
+  const [phoneErrors, setPhoneErrors] = useState({
+    add: "",
+  });
+
   const [phoneCountry, setPhoneCountry] = useState("IN");
-  const [phoneError, setPhoneError] = useState("");
 
   /* -------------------------------------------------------
      add new product
@@ -615,6 +621,8 @@ const CreateInvoice = () => {
 
         phone: client.phone || '',
 
+        phoneCountry: client.phone_country || "IN",
+
         address: client.address || '',
 
         city: client.city || '',
@@ -651,21 +659,30 @@ const CreateInvoice = () => {
 
   const handleCreateClient = async () => {
     if (!newClient.company_name.trim()) {
-      error('Client company name is required');
+      error("Client company name is required");
       return;
     }
 
+    const phoneError = validatePhoneNumber(
+      newClient.phone,
+      newClient.phoneCountry
+    );
+
+    if (phoneError) {
+      setPhoneErrors({
+        add: phoneError,
+      });
+
+      error(phoneError);
+      return;
+    }
+
+    setPhoneErrors({
+      add: "",
+    });
+
     try {
       setCreatingClient(true);
-
-      /*
-       * IMPORTANT:
-       * This payload follows ClientCreate exactly.
-       *
-       * DO NOT send name.
-       * DO NOT send client_id.
-       * DO NOT send invoice fields.
-       */
 
       const payload = {
         company_name: newClient.company_name.trim(),
@@ -679,6 +696,9 @@ const CreateInvoice = () => {
         phone:
           newClient.phone?.trim() || null,
 
+        phone_country:
+          newClient.phoneCountry || "IN",
+
         gst_number:
           newClient.gst_number?.trim() || null,
 
@@ -686,56 +706,50 @@ const CreateInvoice = () => {
           newClient.address?.trim() || null,
       };
 
-
       const response =
         await api.clients.create(payload);
-
 
       const createdClient =
         response?.data;
 
-
       if (!createdClient?.id) {
         throw new Error(
-          'Client was created but the server did not return a client ID.'
+          "Client was created but the server did not return a client ID."
         );
       }
-
-
-      /* Add client to local list */
 
       setClients((prev) => [
         ...prev,
         createdClient,
       ]);
 
-
-      /* Automatically select new client */
-
       handleClientSelect(createdClient);
 
-
-      /* Reset modal */
-
       setNewClient(initialNewClient);
+
+      setPhoneErrors({
+        add: "",
+      });
 
       setShowAddClientModal(false);
 
       success(
-        'Client created successfully'
+        "Client created successfully"
       );
+
     } catch (err) {
       console.error(
-        'Create client error:',
+        "Create client error:",
         err
       );
 
       error(
         getApiErrorMessage(
           err,
-          'Failed to create client'
+          "Failed to create client"
         )
       );
+
     } finally {
       setCreatingClient(false);
     }
@@ -1624,7 +1638,6 @@ const CreateInvoice = () => {
                   }
                 />
 
-
                 <Input
                   label="Tax ID / GST"
                   value={
@@ -1960,33 +1973,31 @@ const CreateInvoice = () => {
                       </p>
 
                       <p className="text-lg font-semibold text-gray-900 dark:text-gray-100 mt-1">
-                        {
-                          formData.client.name
-                        }
+                        {formData.client.name}
                       </p>
                     </div>
-
 
                     <button
                       type="button"
                       onClick={() => {
-                        setFormData(
-                          (prev) => ({
-                            ...prev,
-                            clientId: '',
-                            client: {
-                              name: '',
-                              email: '',
-                              phone: '',
-                              address: '',
-                              city: '',
-                              state: '',
-                              zip: '',
-                              country: '',
-                              taxId: '',
-                            },
-                          })
-                        );
+                        setFormData((prev) => ({
+                          ...prev,
+                          clientId: "",
+                          client: {
+                            name: "",
+                            email: "",
+                            phone: "",
+                            phoneCountry: "IN",
+                            address: "",
+                            city: "",
+                            state: "",
+                            zip: "",
+                            country: "",
+                            taxId: "",
+                          },
+                        }));
+
+                        setClientPhoneError("");
                       }}
                       className="text-xs text-gray-500 hover:text-red-500"
                     >
@@ -1995,77 +2006,117 @@ const CreateInvoice = () => {
 
                   </div>
 
-
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                    {/* EMAIL */}
 
                     <Input
                       label="Email"
                       type="email"
-                      value={
-                        formData.client.email
-                      }
+                      value={formData.client.email}
                       onChange={(e) =>
                         handleClientChange(
-                          'email',
+                          "email",
                           e.target.value
                         )
                       }
                     />
 
 
-                    <Input
-                      label="Phone"
-                      value={
-                        formData.client.phone
-                      }
-                      onChange={(e) =>
-                        handleClientChange(
-                          'phone',
-                          e.target.value
-                        )
-                      }
-                    />
+                    {/* PHONE */}
 
+                    <div className="w-full min-w-0">
+
+                      <PhoneInput
+                        label="Phone"
+                        country={
+                          formData.client.phoneCountry || "IN"
+                        }
+                        phone={
+                          formData.client.phone || ""
+                        }
+                        error={clientPhoneError}
+
+                        onCountryChange={(country) => {
+                          setFormData((prev) => ({
+                            ...prev,
+                            client: {
+                              ...prev.client,
+                              phoneCountry: country,
+                            },
+                          }));
+
+                          setClientPhoneError(
+                            validatePhoneNumber(
+                              formData.client.phone,
+                              country
+                            )
+                          );
+                        }}
+
+                        onPhoneChange={(value) => {
+                          const cleanedValue =
+                            value.replace(/\D/g, "");
+
+                          setFormData((prev) => ({
+                            ...prev,
+                            client: {
+                              ...prev.client,
+                              phone: cleanedValue,
+                            },
+                          }));
+
+                          setClientPhoneError(
+                            validatePhoneNumber(
+                              cleanedValue,
+                              formData.client.phoneCountry || "IN"
+                            )
+                          );
+                        }}
+                      />
+
+                    </div>
+
+
+                    {/* TAX / GST */}
 
                     <Input
                       label="Tax ID / GST"
-                      value={
-                        formData.client.taxId
-                      }
+                      value={formData.client.taxId}
                       onChange={(e) =>
                         handleClientChange(
-                          'taxId',
+                          "taxId",
                           e.target.value
                         )
                       }
                     />
 
+
+                    {/* CITY */}
 
                     <Input
                       label="City"
-                      value={
-                        formData.client.city
-                      }
+                      value={formData.client.city}
                       onChange={(e) =>
                         handleClientChange(
-                          'city',
+                          "city",
                           e.target.value
                         )
                       }
                     />
 
+
+                    {/* ADDRESS */}
 
                     <div className="md:col-span-2">
 
                       <Textarea
                         label="Address"
                         rows={2}
-                        value={
-                          formData.client.address
-                        }
+                        value={formData.client.address}
                         onChange={(e) =>
                           handleClientChange(
-                            'address',
+                            "address",
                             e.target.value
                           )
                         }
@@ -2074,28 +2125,28 @@ const CreateInvoice = () => {
                     </div>
 
 
+                    {/* STATE */}
+
                     <Input
                       label="State"
-                      value={
-                        formData.client.state
-                      }
+                      value={formData.client.state}
                       onChange={(e) =>
                         handleClientChange(
-                          'state',
+                          "state",
                           e.target.value
                         )
                       }
                     />
 
 
+                    {/* ZIP */}
+
                     <Input
                       label="ZIP / Postal Code"
-                      value={
-                        formData.client.zip
-                      }
+                      value={formData.client.zip}
                       onChange={(e) =>
                         handleClientChange(
-                          'zip',
+                          "zip",
                           e.target.value
                         )
                       }
@@ -3288,21 +3339,41 @@ const CreateInvoice = () => {
             />
 
 
-            <Input
+            <PhoneInput
               label="Phone"
-              value={
-                newClient.phone
-              }
-              onChange={(e) =>
-                setNewClient(
-                  (prev) => ({
-                    ...prev,
-                    phone:
-                      e.target.value,
-                  })
-                )
-              }
-              placeholder="+91 9876543210"
+              country={newClient.phoneCountry}
+              phone={newClient.phone}
+              error={phoneErrors.add}
+              onCountryChange={(country) => {
+                setNewClient((prev) => ({
+                  ...prev,
+                  phoneCountry: country,
+                }));
+
+                setPhoneErrors((prev) => ({
+                  ...prev,
+                  add: validatePhoneNumber(
+                    newClient.phone,
+                    country
+                  ),
+                }));
+              }}
+              onPhoneChange={(value) => {
+                const cleanedValue = value.replace(/\D/g, "");
+
+                setNewClient((prev) => ({
+                  ...prev,
+                  phone: cleanedValue,
+                }));
+
+                setPhoneErrors((prev) => ({
+                  ...prev,
+                  add: validatePhoneNumber(
+                    cleanedValue,
+                    newClient.phoneCountry
+                  ),
+                }));
+              }}
             />
 
 
