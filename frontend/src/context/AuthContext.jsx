@@ -6,7 +6,7 @@ import React, {
 } from 'react';
 
 import { api } from '../utils/axiosInstance';
-import { GoogleOAuthProvider } from '@react-oauth/google';
+
 const AuthContext = createContext();
 
 export const useAuth = () => {
@@ -32,14 +32,13 @@ export const AuthProvider = ({ children }) => {
       const storedUser = localStorage.getItem('user');
       const token = localStorage.getItem('token');
 
-      // No authentication data
       if (!storedUser || !token) {
         setLoading(false);
         return;
       }
 
       // --------------------------------------------------------
-      // First load cached user for immediate UI
+      // Load cached user
       // --------------------------------------------------------
 
       try {
@@ -56,7 +55,7 @@ export const AuthProvider = ({ children }) => {
       }
 
       // --------------------------------------------------------
-      // Then fetch latest profile from backend
+      // Fetch latest profile
       // --------------------------------------------------------
 
       try {
@@ -77,7 +76,6 @@ export const AuthProvider = ({ children }) => {
         );
 
         // Keep cached user if profile refresh fails.
-        // Axios interceptor will handle 401 automatically.
       } finally {
         setLoading(false);
       }
@@ -99,51 +97,83 @@ export const AuthProvider = ({ children }) => {
     const { user, access_token } = response.data;
 
     localStorage.setItem('token', access_token);
-    localStorage.setItem('user', JSON.stringify(user));
+    localStorage.setItem(
+      'user',
+      JSON.stringify(user)
+    );
 
     setUser(user);
 
     return user;
   };
+
   // ============================================================
   // GOOGLE LOGIN
   // ============================================================
 
   const googleLogin = async (googleToken) => {
-  const response = await api.auth.googleLogin(googleToken);
+    const response = await api.auth.googleLogin(
+      googleToken
+    );
 
-  const data = response.data;
+    const data = response.data;
 
-  // Google account needs password setup
-  if (data.requires_password_setup) {
+    // ----------------------------------------------------------
+    // Google account needs password setup
+    // ----------------------------------------------------------
+
+    if (data.requires_password_setup) {
+      return data;
+    }
+
+    // ----------------------------------------------------------
+    // Normal Google login
+    // ----------------------------------------------------------
+
+    const { user, access_token } = data;
+
+    localStorage.setItem(
+      'token',
+      access_token
+    );
+
+    localStorage.setItem(
+      'user',
+      JSON.stringify(user)
+    );
+
+    setUser(user);
+
     return data;
-  }
-
-  const { user, access_token } = data;
-
-  localStorage.setItem('token', access_token);
-  localStorage.setItem('user', JSON.stringify(user));
-
-  setUser(user);
-
-  return data;
-};
+  };
 
   // ============================================================
   // REGISTER
   // ============================================================
 
   const register = async (userData) => {
-    const response = await api.auth.register(userData);
+    const response = await api.auth.register(
+      userData
+    );
 
-    const { user, access_token } = response.data;
+    /*
+      New backend registration does NOT log the user in.
 
-    localStorage.setItem('token', access_token);
-    localStorage.setItem('user', JSON.stringify(user));
+      Backend returns:
 
-    setUser(user);
+      {
+        message: "...",
+        email: "user@example.com"
+      }
 
-    return user;
+      Therefore:
+      - Do NOT save token
+      - Do NOT save user
+      - Do NOT setUser()
+      - Return backend response
+    */
+
+    return response.data;
   };
 
   // ============================================================
