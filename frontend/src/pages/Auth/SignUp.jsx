@@ -97,6 +97,7 @@ const SignUp = () => {
     if (!validateForm()) return;
 
     setLoading(true);
+
     try {
       await register({
         name: formData.name,
@@ -105,10 +106,29 @@ const SignUp = () => {
         phone: formData.phone,
         password: formData.password,
       });
-      success('Account created successfully! Redirecting...');
-      setTimeout(() => navigate('/dashboard'), 1000);
+
+      // Store email temporarily so VerifyEmail can display it
+      localStorage.setItem(
+        'pendingVerificationEmail',
+        formData.email
+      );
+
+      success(
+        'Account created! Please check your email to verify your account.'
+      );
+
+      navigate('/verify-email');
+
     } catch (err) {
-      error('Registration failed. Please try again.');
+      console.error(
+        'Registration error:',
+        err
+      );
+
+      error(
+        err?.response?.data?.detail ||
+        'Registration failed. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
@@ -285,7 +305,7 @@ const SignUp = () => {
                         );
 
                         setTimeout(() => {
-                          navigate('/dashboard');
+                          navigate('/profile');
                         }, 500);
 
                       } catch (err) {
