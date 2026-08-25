@@ -6,14 +6,14 @@ from google.oauth2 import id_token
 from google.auth.transport import requests
 
 from ..database import get_db
-from ..models import User, Company , PasswordResetToken
+from ..models import User, Company , PasswordResetToken , EmailVerificationToken
 from ..schemas import UserCreate, UserLogin, SetPassword , ForgotPasswordRequest,  ResetPasswordRequest
 import secrets
 import hashlib
 
 from datetime import datetime, timedelta
 
-from ..email_utils import send_password_reset_email
+from ..email_utils import send_password_reset_email , send_verification_email
 from ..security import (
     hash_password,
     verify_password,
@@ -121,6 +121,8 @@ def google_login(
         if not db_user.google_id:
             db_user.google_id = google_id
 
+        db_user.email_verified = True
+
         db.commit()
         db.refresh(db_user)
 
@@ -139,6 +141,7 @@ def google_login(
             email=email,
             google_id=google_id,
             password=None,
+            email_verified=True,
         )
 
         db.add(db_user)
@@ -336,6 +339,7 @@ def register(
         name=user.name,
         email=user.email,
         password=hash_password(user.password),
+        email_verified=False,
     )
 
     db.add(new_user)
@@ -352,8 +356,6 @@ def register(
 
     new_company = Company(
         user_id=new_user.id,
-
-        # These fields are used only for the initial company.
         company=user.company,
         phone=user.phone,
     )
@@ -361,7 +363,7 @@ def register(
     db.add(new_company)
 
     # ========================================================
-    # SAVE BOTH
+    # SAVE USER + COMPANY
     # ========================================================
 
     db.commit()
@@ -369,18 +371,195 @@ def register(
     db.refresh(new_user)
     db.refresh(new_company)
 
-    # Set the initial company as the user's active company
+    # ========================================================
+    # SET ACTIVE COMPANY
+    # ========================================================
+
     new_user.active_company_id = new_company.id
+
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+
+    # ========================================================
+    # REMOVE OLD UNUSED VERIFICATION TOKENS
+    # ========================================================
+
+    db.query(EmailVerificationToken).filter(
+        EmailVerificationToken.user_id == new_user.id,
+        EmailVerificationToken.used == False,
+    ).delete(
+        synchronize_session=False,
+    )
+
+    # ========================================================
+    # GENERATE VERIFICATION TOKEN
+    # ========================================================
+
+    verification_token = secrets.token_urlsafe(32)
+
+    # ========================================================
+    # HASH TOKEN BEFORE DATABASE STORAGE
+    # ========================================================
+
+    token_hash = hashlib.sha256(
+        verification_token.encode("utf-8")
+    ).hexdigest()
+
+    # ========================================================
+    # TOKEN EXPIRATION
+    # ========================================================
+
+    expires_at = datetime.utcnow() + timedelta(
+        minutes=15
+    )
+
+    # ========================================================
+    # SAVE VERIFICATION TOKEN
+    # ========================================================
+
+    verification_record = EmailVerificationToken(
+        user_id=new_user.id,
+        token_hash=token_hash,
+        expires_at=expires_at,
+        used=False,
+        created_at=datetime.utcnow(),
+    )
+
+    db.add(verification_record)
+    db.commit()
+
+    # ========================================================
+    # SEND VERIFICATION EMAIL
+    # ========================================================
+
+    try:
+
+        send_verification_email(
+            recipient_email=new_user.email,
+            verification_token=verification_token,
+        )
+
+    except Exception as e:
+
+        print(
+            "EMAIL VERIFICATION ERROR:",
+            repr(e),
+        )
+
+        # Remove the verification token if email sending fails
+        db.delete(verification_record)
+        db.commit()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to send verification email",
+        )
 
     # ========================================================
     # RESPONSE
     # ========================================================
 
     return {
-        "message": "User created",
+        "message": (
+            "Account created successfully. "
+            "Please check your email to verify your account."
+        ),
+        "email": new_user.email,
+    }
+
+# ============================================================
+# VERIFY EMAIL
+# ============================================================
+
+@router.post("/verify-email")
+def verify_email(
+    data: dict,
+    db: Session = Depends(get_db),
+):
+    verification_token = data.get("token")
+
+    if not verification_token:
+        raise HTTPException(
+            status_code=400,
+            detail="Verification token is required",
+        )
+
+    # ========================================================
+    # HASH TOKEN
+    # ========================================================
+
+    token_hash = hashlib.sha256(
+        verification_token.encode("utf-8")
+    ).hexdigest()
+
+    # ========================================================
+    # FIND TOKEN
+    # ========================================================
+
+    verification_record = (
+        db.query(EmailVerificationToken)
+        .filter(
+            EmailVerificationToken.token_hash == token_hash,
+            EmailVerificationToken.used == False,
+        )
+        .first()
+    )
+
+    if not verification_record:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired verification link",
+        )
+
+    # ========================================================
+    # CHECK EXPIRATION
+    # ========================================================
+
+    if verification_record.expires_at < datetime.utcnow():
+        raise HTTPException(
+            status_code=400,
+            detail="Verification link has expired",
+        )
+
+    # ========================================================
+    # FIND USER
+    # ========================================================
+
+    db_user = (
+        db.query(User)
+        .filter(
+            User.id == verification_record.user_id
+        )
+        .first()
+    )
+
+    if not db_user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found",
+        )
+
+    # ========================================================
+    # VERIFY USER
+    # ========================================================
+
+    db_user.email_verified = True
+
+    # ========================================================
+    # MARK TOKEN AS USED
+    # ========================================================
+
+    verification_record.used = True
+
+    db.commit()
+
+    # ========================================================
+    # RESPONSE
+    # ========================================================
+
+    return {
+        "message": "Email verified successfully",
     }
 
 # ============================================================
@@ -647,6 +826,16 @@ def login(
         raise HTTPException(
             status_code=401,
             detail="Invalid credentials",
+        )
+
+    # ========================================================
+    # CHECK EMAIL VERIFICATION
+    # ========================================================
+
+    if not db_user.email_verified:
+        raise HTTPException(
+            status_code=403,
+            detail="Please verify your email before logging in",
         )
 
     # ========================================================
