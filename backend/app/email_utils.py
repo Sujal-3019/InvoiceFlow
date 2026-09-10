@@ -216,6 +216,83 @@ Sent via InvoiceFlow
 
 
 # ============================================================
+# SEND QUOTATION EMAIL
+# ============================================================
+
+def send_quotation_email(
+    recipient_email: str,
+    quotation_number: str,
+    quotation_date: str,
+    valid_until: str,
+    amount: str,
+    pdf_bytes: bytes,
+    pdf_filename: str,
+    company_name: str,
+    client_name: str,
+):
+    message = EmailMessage()
+
+    message["Subject"] = (
+        f"Quotation {quotation_number} from {company_name}"
+    )
+
+    message["From"] = os.getenv(
+        "SMTP_USERNAME"
+    )
+
+    message["To"] = recipient_email
+
+    message.set_content(
+        f"""
+Hello {client_name},
+
+Please find your quotation attached to this email.
+
+Quotation Number: {quotation_number}
+Quotation Date: {quotation_date}
+Valid Until: {valid_until}
+Total Amount: {amount}
+
+We hope this quotation meets your requirements.
+
+Please feel free to contact us if you have any questions
+or require any changes to the quotation.
+
+We look forward to doing business with you.
+
+Regards,
+{company_name}
+
+Sent via InvoiceFlow
+"""
+    )
+
+    # --------------------------------------------------------
+    # ATTACH QUOTATION PDF
+    # --------------------------------------------------------
+
+    message.add_attachment(
+        pdf_bytes,
+        maintype="application",
+        subtype="pdf",
+        filename=pdf_filename,
+    )
+
+    # --------------------------------------------------------
+    # SEND EMAIL
+    # --------------------------------------------------------
+
+    server, _ = get_smtp_connection()
+
+    try:
+
+        server.send_message(message)
+
+    finally:
+
+        server.quit()
+
+# ============================================================
 # SEND PAYMENT REMINDER EMAIL
 # ============================================================
 
