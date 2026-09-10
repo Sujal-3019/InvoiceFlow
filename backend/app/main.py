@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import Base,engine
-from .routes import auth , clients , products , invoices , dashboard , users
+from .routes import auth , clients , products , invoices , dashboard , users , quotations
 from . import models
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
@@ -73,6 +73,9 @@ app.include_router(
     users.router
 )
 
+app.include_router(
+    quotations.router
+)
 
 @app.get("/")
 def home():
