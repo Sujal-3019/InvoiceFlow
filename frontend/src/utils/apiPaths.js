@@ -12,7 +12,7 @@ const apiPaths = {
     verifyEmail: '/auth/verify-email',
     changePassword: '/auth/change-password',
   },
-  
+
   // Users
   users: {
     base: '/users',
@@ -20,7 +20,7 @@ const apiPaths = {
     updateProfile: '/users/profile',
     updateAvatar: '/users/avatar',
   },
-  
+
   // Invoices
   invoices: {
     base: '/invoices',
@@ -34,7 +34,21 @@ const apiPaths = {
     download: (id) => `/invoices/${id}/download`,
     payments: (id) => `/invoices/${id}/payments`,
   },
-  
+
+  // Quotations
+  quotations: {
+    base: '/quotations',
+    list: '/quotations',
+    create: '/quotations',
+    nextNumber: '/quotations/next-number',
+    getById: (id) => `/quotations/${id}`,
+    update: (id) => `/quotations/${id}`,
+    delete: (id) => `/quotations/${id}`,
+    generatePdf: (id) => `/quotations/${id}/pdf`,
+    downloadPdf: (id) => `/quotations/${id}/pdf`,
+    uploadLogo: (id) => `/quotations/${id}/logo`,
+  },
+
   // Clients
   clients: {
     base: '/clients',
@@ -45,7 +59,7 @@ const apiPaths = {
     update: (id) => `/clients/${id}`,
     delete: (id) => `/clients/${id}`,
   },
-  
+
   // Dashboard
   dashboard: {
     stats: '/dashboard/stats',
@@ -53,7 +67,7 @@ const apiPaths = {
     recentInvoices: '/dashboard/recent-invoices',
     recentActivity: '/dashboard/recent-activity',
   },
-  
+
   // Reports
   reports: {
     revenue: '/reports/revenue',
@@ -61,7 +75,7 @@ const apiPaths = {
     clients: '/reports/clients',
     taxes: '/reports/taxes',
   },
-  
+
   // Files
   files: {
     upload: '/files/upload',

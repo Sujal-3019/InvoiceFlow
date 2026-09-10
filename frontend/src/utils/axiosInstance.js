@@ -21,6 +21,7 @@ const COMPANY_SCOPED_PATHS = [
   '/clients',
   '/products',
   '/invoices',
+  '/quotations',
   '/dashboard',
 ];
 
@@ -382,6 +383,62 @@ export const api = {
       api.get(`/invoices/${id}/download`, {
         responseType: 'blob',
       }),
+  },
+
+  // Quotation methods
+  quotations: {
+    list: (params) => api.get('/quotations/', { params }),
+
+    nextNumber: () =>
+      api.get('/quotations/next-number'),
+
+    get: (id) =>
+      api.get(`/quotations/${id}`),
+
+    create: (data) =>
+      api.post('/quotations/', data),
+
+    update: (id, data) =>
+      api.put(`/quotations/${id}`, data),
+
+    delete: (id) =>
+      api.delete(`/quotations/${id}`),
+
+    generatePdf: (id) =>
+      api.post(`/quotations/${id}/pdf`),
+
+    downloadPdf: (id) =>
+      api.get(`/quotations/${id}/pdf`, {
+        responseType: 'blob',
+      }),
+    send: (id) => 
+      api.post(`/quotations/${id}/send`),
+
+    uploadLogo: (id, file, onProgress) => {
+      const formData = new FormData();
+
+      formData.append('file', file, file.name);
+
+      return api.post(
+        `/quotations/${id}/logo`,
+        formData,
+        {
+          onUploadProgress: (event) => {
+            if (!event.total) {
+              return;
+            }
+
+            const progress = Math.round(
+              (event.loaded * 100) / event.total
+            );
+
+            if (onProgress) {
+              onProgress(progress);
+            }
+          },
+        }
+      );
+    },
   },
 
   // Client methods
