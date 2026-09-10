@@ -59,7 +59,7 @@ from ..schemas import (
     InvoiceReminderRequest,
 )
 from ..security import get_current_user
-from ..email_utils import send_invoice_email , send_payment_reminder_email
+from ..email_utils import send_invoice_email , send_payment_reminder_email , send_quotation_email
 
 
 router = APIRouter(
