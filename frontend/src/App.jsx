@@ -33,6 +33,11 @@ import AllInvoices from './pages/Invoices/AllInvoices';
 import EditInvoice from './pages/Invoices/EditInvoice';
 import InvoiceDetails from './pages/Invoices/InvoiceDetails';
 
+import AllQuotations from './pages/Quotations/AllQuotations';
+import CreateQuotation from './pages/Quotations/CreateQuotation';
+import QuotationDetails from './pages/Quotations/QuotationDetails';
+import EditQuotation from './pages/Quotations/EditQuotation';
+
 import Clients from './pages/Clients/Clients';
 import ClientInvoices from './pages/Clients/ClientInvoices';
 
@@ -420,6 +425,90 @@ function AppRoutes() {
         />
       </Route>
 
+
+      {/* =====================================================
+          QUOTATIONS
+      ===================================================== */}
+
+      {/* -----------------------------------------------------
+          ALL QUOTATIONS
+
+          /quotations
+      ----------------------------------------------------- */}
+
+      <Route
+        path="/quotations"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route
+          index
+          element={<AllQuotations />}
+        />
+      </Route>
+
+
+
+
+      {/* -----------------------------------------------------
+          CREATE QUOTATION
+
+          /quotation/create
+      ----------------------------------------------------- */}
+
+      <Route
+        path="/quotation/create"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route
+          index
+          element={<CreateQuotation />}
+        />
+      </Route>
+
+      {/* -----------------------------------------------------
+    VIEW EXISTING QUOTATION
+
+    /quotations/:id/view
+
+    Read-only quotation details page.
+----------------------------------------------------- */}
+
+      <Route
+        path="/quotations/:id/view"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route
+          index
+          element={<QuotationDetails />}
+        />
+      </Route>
+
+      {/* edit quotation */}
+      <Route
+        path="/quotations/:id/edit"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route
+          index
+          element={<EditQuotation />}
+        />
+      </Route>
 
       {/* =====================================================
           CLIENTS
