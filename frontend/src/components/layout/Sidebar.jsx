@@ -20,7 +20,9 @@ const Sidebar = ({ isOpen, onClose }) => {
   const navItems = [
     { to: '/dashboard', icon: FiGrid, label: 'Dashboard' },
     { to: '/invoices/create', icon: FiPlusCircle, label: 'Create Invoice' },
+    { to: '/quotation/create', icon: FiPlusCircle, label: 'Create Quotation' },
     { to: '/invoices', icon: FiFileText, label: 'Invoice History' },
+    { to: '/quotations', icon: FiFileText, label: 'Quotation History' },
     { to: '/clients', icon: FiUsers, label: 'Clients' },
     { to: '/products', icon: FiUsers, label: 'Products' },
     { to: '/reports', icon: FiBarChart2, label: 'Reports' },
