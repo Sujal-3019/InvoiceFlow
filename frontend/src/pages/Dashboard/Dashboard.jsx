@@ -12,6 +12,7 @@ import {
   FiSend,
   FiPlus,
   FiUsers,
+  FiFile,
 } from "react-icons/fi";
 
 import {
@@ -45,11 +46,26 @@ const money = (value) => {
   return Number.isFinite(number) ? number : 0;
 };
 
-const getInvoiceCurrency = (invoice, fallbackCurrency = "INR") => {
+const getInvoiceCurrency = (
+  invoice,
+  fallbackCurrency = "INR"
+) => {
   return (
     invoice.currency ||
     invoice.currency_code ||
     invoice.currencyCode ||
+    fallbackCurrency
+  ).toUpperCase();
+};
+
+const getQuotationCurrency = (
+  quotation,
+  fallbackCurrency = "INR"
+) => {
+  return (
+    quotation.currency ||
+    quotation.currency_code ||
+    quotation.currencyCode ||
     fallbackCurrency
   ).toUpperCase();
 };
@@ -62,7 +78,8 @@ const getCurrencySymbol = (currency) => {
       maximumFractionDigits: 0,
     })
       .formatToParts(0)
-      .find((part) => part.type === "currency")?.value || currency;
+      .find((part) => part.type === "currency")
+      ?.value || currency;
   } catch {
     return currency;
   }
@@ -100,18 +117,29 @@ const Dashboard = () => {
   // ==========================================================
 
   const [dashboardData, setDashboardData] = useState(null);
+
   const [invoices, setInvoices] = useState([]);
+  const [quotations, setQuotations] = useState([]);
   const [clients, setClients] = useState([]);
 
   const [loading, setLoading] = useState(true);
-  const [revenuePeriod, setRevenuePeriod] = useState("Last 6 months");
+  const [revenuePeriod, setRevenuePeriod] =
+    useState("Last 6 months");
 
+  const [exchangeRates, setExchangeRates] =
+    useState({});
 
-  const [exchangeRates, setExchangeRates] = useState({});
-  const [showReminderModal, setShowReminderModal] = useState(false);
-  const [sendingReminders, setSendingReminders] = useState(false);
-  const [selectedReminderInvoices, setSelectedReminderInvoices] = useState([]);
-  const [selectedReminderClient, setSelectedReminderClient] = useState(null);
+  const [showReminderModal, setShowReminderModal] =
+    useState(false);
+
+  const [sendingReminders, setSendingReminders] =
+    useState(false);
+
+  const [selectedReminderInvoices, setSelectedReminderInvoices] =
+    useState([]);
+
+  const [selectedReminderClient, setSelectedReminderClient] =
+    useState(null);
 
   // ==========================================================
   // FETCH DASHBOARD DATA
@@ -124,32 +152,65 @@ const Dashboard = () => {
       const [
         summaryResponse,
         invoicesResponse,
+        quotationsResponse,
         clientsResponse,
       ] = await Promise.all([
         api.dashboard.summary(),
         api.invoices.list(),
+        api.quotations.list(),
         api.clients.list(),
       ]);
 
+      // ------------------------------------------------------
       // SUMMARY
-      setDashboardData(summaryResponse.data || {});
+      // ------------------------------------------------------
 
+      setDashboardData(
+        summaryResponse.data || {}
+      );
+
+      // ------------------------------------------------------
       // INVOICES
-      const invoiceData = Array.isArray(invoicesResponse.data)
-        ? invoicesResponse.data
-        : invoicesResponse.data?.invoices || [];
+      // ------------------------------------------------------
+
+      const invoiceData =
+        Array.isArray(invoicesResponse.data)
+          ? invoicesResponse.data
+          : invoicesResponse.data?.invoices || [];
 
       setInvoices(invoiceData);
 
+      // ------------------------------------------------------
+      // QUOTATIONS
+      // ------------------------------------------------------
+
+      const quotationData =
+        Array.isArray(quotationsResponse.data)
+          ? quotationsResponse.data
+          : quotationsResponse.data?.quotations || [];
+
+      setQuotations(quotationData);
+
+      // ------------------------------------------------------
       // CLIENTS
-      const clientData = Array.isArray(clientsResponse.data)
-        ? clientsResponse.data
-        : clientsResponse.data?.clients || [];
+      // ------------------------------------------------------
+
+      const clientData =
+        Array.isArray(clientsResponse.data)
+          ? clientsResponse.data
+          : clientsResponse.data?.clients || [];
 
       setClients(clientData);
     } catch (err) {
-      console.error("DASHBOARD FETCH ERROR:", err);
-      console.error("DASHBOARD RESPONSE:", err.response);
+      console.error(
+        "DASHBOARD FETCH ERROR:",
+        err
+      );
+
+      console.error(
+        "DASHBOARD RESPONSE:",
+        err.response
+      );
 
       error(
         err.response?.data?.detail ||
@@ -176,16 +237,25 @@ const Dashboard = () => {
       map[client.id] =
         client.company_name ||
         client.name ||
+        client.contact_person ||
         "Unknown Client";
     });
 
     return map;
   }, [clients]);
 
+  // ==========================================================
+  // CURRENCY
+  // ==========================================================
+
   const currency =
     user?.currency ||
     user?.profile?.currency ||
     "INR";
+
+  // ==========================================================
+  // REMINDER INVOICES
+  // ==========================================================
 
   const reminderInvoices = useMemo(() => {
     return invoices
@@ -206,8 +276,13 @@ const Dashboard = () => {
           (c) => c.id === invoice.client_id
         );
 
-        const total = money(invoice.grand_total);
-        const paid = money(invoice.amount_paid);
+        const total = money(
+          invoice.grand_total
+        );
+
+        const paid = money(
+          invoice.amount_paid
+        );
 
         const pending = Math.max(
           total - paid,
@@ -229,6 +304,7 @@ const Dashboard = () => {
           reminderClientName:
             client?.company_name ||
             client?.name ||
+            client?.contact_person ||
             invoice.client_name ||
             "Unknown Client",
 
@@ -260,13 +336,22 @@ const Dashboard = () => {
         (invoice) =>
           invoice.reminderPending > 0
       );
-  }, [invoices, clients, currency]);
+  }, [
+    invoices,
+    clients,
+    currency,
+  ]);
+
+  // ==========================================================
+  // REMINDER CLIENTS
+  // ==========================================================
 
   const reminderClients = useMemo(() => {
     const grouped = {};
 
     reminderInvoices.forEach((invoice) => {
-      const clientId = invoice.reminderClientId;
+      const clientId =
+        invoice.reminderClientId;
 
       if (!grouped[clientId]) {
         grouped[clientId] = {
@@ -280,7 +365,9 @@ const Dashboard = () => {
         };
       }
 
-      grouped[clientId].invoices.push(invoice);
+      grouped[clientId].invoices.push(
+        invoice
+      );
 
       grouped[clientId].totalPending +=
         invoice.reminderPending;
@@ -289,7 +376,9 @@ const Dashboard = () => {
     return Object.values(grouped);
   }, [reminderInvoices]);
 
-  const openReminderClient = (client) => {
+  const openReminderClient = (
+    client
+  ) => {
     setSelectedReminderClient(client);
   };
 
@@ -297,29 +386,42 @@ const Dashboard = () => {
     setSelectedReminderClient(null);
   };
 
-  const toggleClientInvoices = (client) => {
-    const clientInvoiceIds = client.invoices.map(
-      (invoice) => invoice.reminderId
-    );
+  const toggleClientInvoices = (
+    client
+  ) => {
+    const clientInvoiceIds =
+      client.invoices.map(
+        (invoice) =>
+          invoice.reminderId
+      );
 
     const allSelected =
-      clientInvoiceIds.every((id) =>
-        selectedReminderInvoices.includes(id)
+      clientInvoiceIds.every(
+        (id) =>
+          selectedReminderInvoices.includes(
+            id
+          )
       );
 
     if (allSelected) {
-      setSelectedReminderInvoices((prev) =>
-        prev.filter(
-          (id) => !clientInvoiceIds.includes(id)
-        )
+      setSelectedReminderInvoices(
+        (prev) =>
+          prev.filter(
+            (id) =>
+              !clientInvoiceIds.includes(
+                id
+              )
+          )
       );
     } else {
-      setSelectedReminderInvoices((prev) => [
-        ...new Set([
-          ...prev,
-          ...clientInvoiceIds,
-        ]),
-      ]);
+      setSelectedReminderInvoices(
+        (prev) => [
+          ...new Set([
+            ...prev,
+            ...clientInvoiceIds,
+          ]),
+        ]
+      );
     }
   };
 
@@ -327,10 +429,17 @@ const Dashboard = () => {
   // REAL DASHBOARD VALUES
   // ==========================================================
 
-  const totalRevenue = money(dashboardData?.total_revenue);
+  const totalRevenue = money(
+    dashboardData?.total_revenue
+  );
 
   const totalInvoices =
-    Number(dashboardData?.total_invoices) || 0;
+    Number(
+      dashboardData?.total_invoices
+    ) || 0;
+
+  const totalQuotations =
+    quotations.length;
 
   // ==========================================================
   // RECEIVED AMOUNT
@@ -339,11 +448,16 @@ const Dashboard = () => {
   const receivedAmount = useMemo(() => {
     return invoices
       .filter(
-        (invoice) => invoice.status !== "cancelled"
+        (invoice) =>
+          invoice.status !==
+          "cancelled"
       )
       .reduce(
         (sum, invoice) =>
-          sum + money(invoice.amount_paid),
+          sum +
+          money(
+            invoice.amount_paid
+          ),
         0
       );
   }, [invoices]);
@@ -355,14 +469,30 @@ const Dashboard = () => {
   const pendingAmount = useMemo(() => {
     return invoices
       .filter(
-        (invoice) => invoice.status !== "cancelled"
+        (invoice) =>
+          invoice.status !==
+          "cancelled"
       )
-      .reduce((sum, invoice) => {
-        const total = money(invoice.grand_total);
-        const paid = money(invoice.amount_paid);
+      .reduce(
+        (sum, invoice) => {
+          const total = money(
+            invoice.grand_total
+          );
 
-        return sum + Math.max(total - paid, 0);
-      }, 0);
+          const paid = money(
+            invoice.amount_paid
+          );
+
+          return (
+            sum +
+            Math.max(
+              total - paid,
+              0
+            )
+          );
+        },
+        0
+      );
   }, [invoices]);
 
   // ==========================================================
@@ -377,6 +507,7 @@ const Dashboard = () => {
       color:
         "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400",
     },
+
     {
       title: "Total Invoices",
       value: totalInvoices,
@@ -384,6 +515,15 @@ const Dashboard = () => {
       color:
         "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400",
     },
+
+    {
+      title: "Total Quotations",
+      value: totalQuotations,
+      icon: FiFile,
+      color:
+        "bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400",
+    },
+
     {
       title: "Received Amount",
       value: receivedAmount,
@@ -391,6 +531,7 @@ const Dashboard = () => {
       color:
         "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400",
     },
+
     {
       title: "Pending Amount",
       value: pendingAmount,
@@ -401,18 +542,21 @@ const Dashboard = () => {
   ];
 
   // ==========================================================
-  // CURRENCY
+  // FORMAT CURRENCY
   // ==========================================================
 
   const formatCurrency = (
     amount,
     currencyCode = currency
   ) => {
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: currencyCode,
-      maximumFractionDigits: 2,
-    }).format(money(amount));
+    return new Intl.NumberFormat(
+      "en-IN",
+      {
+        style: "currency",
+        currency: currencyCode,
+        maximumFractionDigits: 2,
+      }
+    ).format(money(amount));
   };
 
   // ==========================================================
@@ -421,7 +565,9 @@ const Dashboard = () => {
 
   const handleExportReport = () => {
     if (!invoices.length) {
-      error("No invoice data available to export.");
+      error(
+        "No invoice data available to export."
+      );
       return;
     }
 
@@ -439,45 +585,75 @@ const Dashboard = () => {
       "Status",
     ];
 
-    const rows = invoices.map((invoice) => {
-      const total = money(invoice.grand_total);
-      const paid = money(invoice.amount_paid);
-      const pending = Math.max(total - paid, 0);
+    const rows = invoices.map(
+      (invoice) => {
+        const total = money(
+          invoice.grand_total
+        );
 
-      const client =
-        clientMap[invoice.client_id] ||
-        invoice.client_name ||
-        "Unknown Client";
+        const paid = money(
+          invoice.amount_paid
+        );
 
-      const status =
-        invoice.payment_status ||
-        invoice.status ||
-        "unpaid";
+        const pending = Math.max(
+          total - paid,
+          0
+        );
 
-      return [
-        invoice.invoice_number ||
-        `INV-${invoice.id}`,
-        client,
-        invoice.invoice_date || "",
-        invoice.due_date || "",
-        money(invoice.subtotal),
-        money(invoice.tax_amount || invoice.tax),
-        money(
-          invoice.discount_amount ||
-          invoice.discount
-        ),
-        total,
-        paid,
-        pending,
-        status,
-      ];
-    });
+        const client =
+          clientMap[
+            invoice.client_id
+          ] ||
+          invoice.client_name ||
+          "Unknown Client";
 
-    const csvContent = [headers, ...rows]
+        const status =
+          invoice.payment_status ||
+          invoice.status ||
+          "unpaid";
+
+        return [
+          invoice.invoice_number ||
+          `INV-${invoice.id}`,
+
+          client,
+
+          invoice.invoice_date || "",
+
+          invoice.due_date || "",
+
+          money(invoice.subtotal),
+
+          money(
+            invoice.tax_amount ||
+            invoice.tax
+          ),
+
+          money(
+            invoice.discount_amount ||
+            invoice.discount
+          ),
+
+          total,
+
+          paid,
+
+          pending,
+
+          status,
+        ];
+      }
+    );
+
+    const csvContent = [
+      headers,
+      ...rows,
+    ]
       .map((row) =>
         row
           .map((value) => {
-            const stringValue = String(value ?? "");
+            const stringValue =
+              String(value ?? "");
 
             if (
               stringValue.includes(",") ||
@@ -496,55 +672,82 @@ const Dashboard = () => {
       )
       .join("\n");
 
-    const blob = new Blob([csvContent], {
-      type: "text/csv;charset=utf-8;",
-    });
+    const blob = new Blob(
+      [csvContent],
+      {
+        type: "text/csv;charset=utf-8;",
+      }
+    );
 
-    const url = URL.createObjectURL(blob);
+    const url =
+      URL.createObjectURL(blob);
 
-    const link = document.createElement("a");
+    const link =
+      document.createElement("a");
+
     link.href = url;
 
     const today = new Date()
       .toISOString()
       .split("T")[0];
 
-    link.download = `InvoiceFlow_Report_${today}.csv`;
+    link.download =
+      `InvoiceFlow_Report_${today}.csv`;
 
-    document.body.appendChild(link);
+    document.body.appendChild(
+      link
+    );
+
     link.click();
 
-    document.body.removeChild(link);
+    document.body.removeChild(
+      link
+    );
+
     URL.revokeObjectURL(url);
 
-    success("Report exported successfully!");
+    success(
+      "Report exported successfully!"
+    );
   };
 
   // ==========================================================
   // SEND PAYMENT REMINDER
   // ==========================================================
 
-  const toggleReminderInvoice = (invoiceId) => {
-    setSelectedReminderInvoices((prev) =>
-      prev.includes(invoiceId)
-        ? prev.filter((id) => id !== invoiceId)
-        : [...prev, invoiceId]
+  const toggleReminderInvoice = (
+    invoiceId
+  ) => {
+    setSelectedReminderInvoices(
+      (prev) =>
+        prev.includes(invoiceId)
+          ? prev.filter(
+              (id) =>
+                id !== invoiceId
+            )
+          : [
+              ...prev,
+              invoiceId,
+            ]
     );
   };
 
   const toggleSelectAllReminders = () => {
     const allInvoiceIds =
       reminderInvoices.map(
-        (invoice) => invoice.reminderId
+        (invoice) =>
+          invoice.reminderId
       );
 
     const allSelected =
       selectedReminderInvoices.length ===
-      allInvoiceIds.length &&
+        allInvoiceIds.length &&
       allInvoiceIds.length > 0;
 
     if (allSelected) {
-      setSelectedReminderInvoices([]);
+      setSelectedReminderInvoices(
+        []
+      );
     } else {
       setSelectedReminderInvoices(
         allInvoiceIds
@@ -552,197 +755,253 @@ const Dashboard = () => {
     }
   };
 
-  const selectedReminderTotal = useMemo(() => {
-    return reminderInvoices
-      .filter((invoice) =>
-        selectedReminderInvoices.includes(
-          invoice.reminderId
+  const selectedReminderTotal =
+    useMemo(() => {
+      return reminderInvoices
+        .filter((invoice) =>
+          selectedReminderInvoices.includes(
+            invoice.reminderId
+          )
         )
-      )
-      .reduce(
-        (sum, invoice) =>
-          sum + invoice.reminderPending,
+        .reduce(
+          (sum, invoice) =>
+            sum +
+            invoice.reminderPending,
+          0
+        );
+    }, [
+      reminderInvoices,
+      selectedReminderInvoices,
+    ]);
+
+  const handleSendReminder =
+    async () => {
+      // --------------------------------------------------
+      // PREVENT DOUBLE CLICK
+      // --------------------------------------------------
+
+      if (sendingReminders) {
+        return;
+      }
+
+      // --------------------------------------------------
+      // VALIDATE SELECTION
+      // --------------------------------------------------
+
+      if (
+        selectedReminderInvoices.length ===
         0
-      );
-  }, [
-    reminderInvoices,
-    selectedReminderInvoices,
-  ]);
+      ) {
+        error(
+          "Please select at least one invoice."
+        );
+        return;
+      }
 
-  const handleSendReminder = async () => {
-    // --------------------------------------------------
-    // PREVENT DOUBLE CLICK
-    // --------------------------------------------------
+      // --------------------------------------------------
+      // GET SELECTED INVOICES
+      // --------------------------------------------------
 
-    if (sendingReminders) {
-      return;
-    }
+      const selectedInvoices =
+        reminderInvoices.filter(
+          (invoice) =>
+            selectedReminderInvoices.includes(
+              invoice.reminderId
+            )
+        );
 
-    // --------------------------------------------------
-    // VALIDATE SELECTION
-    // --------------------------------------------------
+      // --------------------------------------------------
+      // CHECK CLIENT EMAILS
+      // --------------------------------------------------
 
-    if (selectedReminderInvoices.length === 0) {
-      error("Please select at least one invoice.");
-      return;
-    }
+      const invoicesWithoutEmail =
+        selectedInvoices.filter(
+          (invoice) =>
+            !invoice.reminderEmail
+        );
 
-    // --------------------------------------------------
-    // GET SELECTED INVOICES
-    // --------------------------------------------------
+      if (
+        invoicesWithoutEmail.length ===
+        selectedInvoices.length
+      ) {
+        error(
+          "None of the selected clients have an email address."
+        );
+        return;
+      }
 
-    const selectedInvoices = reminderInvoices.filter((invoice) =>
-      selectedReminderInvoices.includes(invoice.reminderId)
-    );
+      // --------------------------------------------------
+      // WARNING FOR INVOICES WITHOUT EMAIL
+      // --------------------------------------------------
 
-    // --------------------------------------------------
-    // CHECK CLIENT EMAILS
-    // --------------------------------------------------
+      if (
+        invoicesWithoutEmail.length >
+        0
+      ) {
+        console.warn(
+          "Invoices without email:",
+          invoicesWithoutEmail
+        );
+      }
 
-    const invoicesWithoutEmail = selectedInvoices.filter(
-      (invoice) => !invoice.reminderEmail
-    );
+      // --------------------------------------------------
+      // GET VALID INVOICE IDs
+      // --------------------------------------------------
 
-    if (invoicesWithoutEmail.length === selectedInvoices.length) {
-      error("None of the selected clients have an email address.");
-      return;
-    }
+      const invoiceIds =
+        selectedInvoices
+          .filter(
+            (invoice) =>
+              invoice.reminderEmail
+          )
+          .map(
+            (invoice) =>
+              invoice.reminderId
+          );
 
-    // --------------------------------------------------
-    // WARNING FOR INVOICES WITHOUT EMAIL
-    // --------------------------------------------------
+      if (
+        invoiceIds.length === 0
+      ) {
+        error(
+          "No valid invoices selected."
+        );
+        return;
+      }
 
-    if (invoicesWithoutEmail.length > 0) {
-      console.warn(
-        "Invoices without email:",
-        invoicesWithoutEmail
-      );
-    }
+      // --------------------------------------------------
+      // START LOADING
+      // --------------------------------------------------
 
-    // --------------------------------------------------
-    // GET VALID INVOICE IDs
-    // --------------------------------------------------
+      setSendingReminders(true);
 
-    const invoiceIds = selectedInvoices
-      .filter((invoice) => invoice.reminderEmail)
-      .map((invoice) => invoice.reminderId);
+      try {
+        // ------------------------------------------------
+        // SEND PAYMENT REMINDERS
+        // ------------------------------------------------
 
-    if (invoiceIds.length === 0) {
-      error("No valid invoices selected.");
-      return;
-    }
+        const response =
+          await api.invoices.sendReminders(
+            invoiceIds
+          );
 
-    // --------------------------------------------------
-    // START LOADING
-    // --------------------------------------------------
+        // ------------------------------------------------
+        // SUCCESS
+        // ------------------------------------------------
 
-    setSendingReminders(true);
+        success(
+          response?.data?.message ||
+          "Payment reminders sent successfully."
+        );
 
-    try {
-      // ------------------------------------------------
-      // SEND PAYMENT REMINDERS
-      // ------------------------------------------------
+        // ------------------------------------------------
+        // CLOSE MODAL
+        // ------------------------------------------------
 
-      const response = await api.invoices.sendReminders(invoiceIds);
+        setShowReminderModal(false);
 
-      // ------------------------------------------------
-      // SUCCESS
-      // ------------------------------------------------
+        setSelectedReminderClient(
+          null
+        );
 
-      success(
-        response?.data?.message ||
-        "Payment reminders sent successfully."
-      );
+        setSelectedReminderInvoices(
+          []
+        );
+      } catch (err) {
+        // ------------------------------------------------
+        // ERROR
+        // ------------------------------------------------
 
-      // ------------------------------------------------
-      // CLOSE MODAL ONLY AFTER REQUEST FINISHES
-      // ------------------------------------------------
+        console.error(
+          "SEND REMINDER ERROR:",
+          err
+        );
 
-      setShowReminderModal(false);
-      setSelectedReminderClient(null);
-      setSelectedReminderInvoices([]);
+        console.error(
+          "SEND REMINDER RESPONSE:",
+          err?.response
+        );
 
-    } catch (err) {
-      // ------------------------------------------------
-      // ERROR
-      // ------------------------------------------------
+        console.error(
+          "SEND REMINDER RESPONSE DATA:",
+          err?.response?.data
+        );
 
-      console.error("SEND REMINDER ERROR:", err);
-      console.error("SEND REMINDER RESPONSE:", err?.response);
-      console.error(
-        "SEND REMINDER RESPONSE DATA:",
-        err?.response?.data
-      );
+        error(
+          err?.response?.data
+            ?.detail ||
+          err?.response?.data
+            ?.message ||
+          "Unable to send payment reminders."
+        );
+      } finally {
+        // ------------------------------------------------
+        // STOP LOADING
+        // ------------------------------------------------
 
-      error(
-        err?.response?.data?.detail ||
-        err?.response?.data?.message ||
-        "Unable to send payment reminders."
-      );
-
-    } finally {
-      // ------------------------------------------------
-      // STOP LOADING
-      // ------------------------------------------------
-
-      setSendingReminders(false);
-    }
-  };
+        setSendingReminders(false);
+      }
+    };
 
   // ==========================================================
   // INVOICE STATUS CHART
   // ==========================================================
 
-  const invoiceStatusData = useMemo(() => {
-    if (!dashboardData) {
-      return [];
-    }
+  const invoiceStatusData =
+    useMemo(() => {
+      if (!dashboardData) {
+        return [];
+      }
 
-    return [
-      {
-        name: "Paid",
-        value:
-          Number(
-            dashboardData.paid_invoices
-          ) || 0,
-        color: "#16A34A",
-      },
-      {
-        name: "Partial",
-        value:
-          Number(
-            dashboardData.partial_invoices
-          ) || 0,
-        color: "#F59E0B",
-      },
-      {
-        name: "Unpaid",
-        value:
-          Number(
-            dashboardData.unpaid_invoices
-          ) || 0,
-        color: "#DC2626",
-      },
-      {
-        name: "Draft",
-        value:
-          Number(
-            dashboardData.draft_invoices
-          ) || 0,
-        color: "#64748B",
-      },
-      {
-        name: "Cancelled",
-        value:
-          Number(
-            dashboardData.cancelled_invoices
-          ) || 0,
-        color: "#94A3B8",
-      },
-    ].filter(
-      (item) => item.value > 0
-    );
-  }, [dashboardData]);
+      return [
+        {
+          name: "Paid",
+          value:
+            Number(
+              dashboardData.paid_invoices
+            ) || 0,
+          color: "#16A34A",
+        },
+
+        {
+          name: "Partial",
+          value:
+            Number(
+              dashboardData.partial_invoices
+            ) || 0,
+          color: "#F59E0B",
+        },
+
+        {
+          name: "Unpaid",
+          value:
+            Number(
+              dashboardData.unpaid_invoices
+            ) || 0,
+          color: "#DC2626",
+        },
+
+        {
+          name: "Draft",
+          value:
+            Number(
+              dashboardData.draft_invoices
+            ) || 0,
+          color: "#64748B",
+        },
+
+        {
+          name: "Cancelled",
+          value:
+            Number(
+              dashboardData.cancelled_invoices
+            ) || 0,
+          color: "#94A3B8",
+        },
+      ].filter(
+        (item) =>
+          item.value > 0
+      );
+    }, [dashboardData]);
 
   // ==========================================================
   // REVENUE CHART
@@ -753,38 +1012,51 @@ const Dashboard = () => {
 
     let months = 6;
 
-    if (revenuePeriod === "Last year") {
+    if (
+      revenuePeriod ===
+      "Last year"
+    ) {
       months = 12;
     }
 
-    if (revenuePeriod === "All time") {
-      if (invoices.length === 0) {
+    if (
+      revenuePeriod ===
+      "All time"
+    ) {
+      if (!invoices.length) {
         return [];
       }
 
       const dates = invoices
         .filter(
           (invoice) =>
-            invoice.status !== "cancelled"
+            invoice.status !==
+            "cancelled"
         )
         .map(
           (invoice) =>
-            new Date(invoice.invoice_date)
+            new Date(
+              invoice.invoice_date
+            )
         )
         .filter(
           (date) =>
-            !Number.isNaN(date.getTime())
+            !Number.isNaN(
+              date.getTime()
+            )
         );
 
-      if (dates.length === 0) {
+      if (!dates.length) {
         return [];
       }
 
-      const oldestYear = Math.min(
-        ...dates.map((date) =>
-          date.getFullYear()
-        )
-      );
+      const oldestYear =
+        Math.min(
+          ...dates.map(
+            (date) =>
+              date.getFullYear()
+          )
+        );
 
       const currentYear =
         today.getFullYear();
@@ -796,31 +1068,36 @@ const Dashboard = () => {
         year <= currentYear;
         year++
       ) {
-        const revenue = invoices
-          .filter((invoice) => {
-            if (
-              invoice.status ===
-              "cancelled"
-            ) {
-              return false;
-            }
+        const revenue =
+          invoices
+            .filter(
+              (invoice) => {
+                if (
+                  invoice.status ===
+                  "cancelled"
+                ) {
+                  return false;
+                }
 
-            const date = new Date(
-              invoice.invoice_date
-            );
+                const date =
+                  new Date(
+                    invoice.invoice_date
+                  );
 
-            return (
-              date.getFullYear() === year
+                return (
+                  date.getFullYear() ===
+                  year
+                );
+              }
+            )
+            .reduce(
+              (sum, invoice) =>
+                sum +
+                money(
+                  invoice.grand_total
+                ),
+              0
             );
-          })
-          .reduce(
-            (sum, invoice) =>
-              sum +
-              money(
-                invoice.grand_total
-              ),
-            0
-          );
 
         result.push({
           month: String(year),
@@ -844,108 +1121,202 @@ const Dashboard = () => {
         1
       );
 
-      const month = date.getMonth();
-      const year = date.getFullYear();
+      const month =
+        date.getMonth();
 
-      const revenue = invoices
-        .filter((invoice) => {
-          if (
-            invoice.status ===
-            "cancelled"
-          ) {
-            return false;
-          }
+      const year =
+        date.getFullYear();
 
-          const invoiceDate = new Date(
-            invoice.invoice_date
+      const revenue =
+        invoices
+          .filter(
+            (invoice) => {
+              if (
+                invoice.status ===
+                "cancelled"
+              ) {
+                return false;
+              }
+
+              const invoiceDate =
+                new Date(
+                  invoice.invoice_date
+                );
+
+              return (
+                invoiceDate.getMonth() ===
+                  month &&
+                invoiceDate.getFullYear() ===
+                  year
+              );
+            }
+          )
+          .reduce(
+            (sum, invoice) =>
+              sum +
+              money(
+                invoice.grand_total
+              ),
+            0
           );
-
-          return (
-            invoiceDate.getMonth() ===
-            month &&
-            invoiceDate.getFullYear() ===
-            year
-          );
-        })
-        .reduce(
-          (sum, invoice) =>
-            sum +
-            money(
-              invoice.grand_total
-            ),
-          0
-        );
 
       result.push({
-        month: MONTH_NAMES[month],
+        month:
+          MONTH_NAMES[month],
         revenue,
       });
     }
 
     return result;
-  }, [invoices, revenuePeriod]);
+  }, [
+    invoices,
+    revenuePeriod,
+  ]);
 
   // ==========================================================
   // RECENT INVOICES
   // ==========================================================
 
-  const recentInvoices = useMemo(() => {
-    return [...invoices]
-      .sort(
-        (a, b) =>
-          new Date(b.invoice_date) -
-          new Date(a.invoice_date)
-      )
-      .slice(0, 5)
-      .map((invoice) => ({
-        id:
-          invoice.invoice_number ||
-          `INV-${invoice.id}`,
+  const recentInvoices =
+    useMemo(() => {
+      return [...invoices]
+        .sort(
+          (a, b) =>
+            new Date(
+              b.invoice_date
+            ) -
+            new Date(
+              a.invoice_date
+            )
+        )
+        .slice(0, 5)
+        .map((invoice) => ({
+          id:
+            invoice.invoice_number ||
+            `INV-${invoice.id}`,
 
-        invoiceId: invoice.id,
+          invoiceId:
+            invoice.id,
 
-        currency: getInvoiceCurrency(
-          invoice,
-          currency
-        ),
+          currency:
+            getInvoiceCurrency(
+              invoice,
+              currency
+            ),
 
-        client:
-          clientMap[invoice.client_id] ||
-          invoice.client_name ||
-          "Unknown Client",
+          client:
+            clientMap[
+              invoice.client_id
+            ] ||
+            invoice.client_name ||
+            "Unknown Client",
 
-        amount: money(invoice.grand_total),
+          amount: money(
+            invoice.grand_total
+          ),
 
-        status:
-          invoice.payment_status ||
-          "unpaid",
+          status:
+            invoice.payment_status ||
+            "unpaid",
 
-        date: invoice.invoice_date,
-      }));
-  }, [invoices, clientMap, currency]);
+          date:
+            invoice.invoice_date,
+        }));
+    }, [
+      invoices,
+      clientMap,
+      currency,
+    ]);
+
+  // ==========================================================
+  // RECENT QUOTATIONS
+  // ==========================================================
+
+  const recentQuotations =
+    useMemo(() => {
+      return [...quotations]
+        .sort(
+          (a, b) =>
+            new Date(
+              b.quotation_date
+            ) -
+            new Date(
+              a.quotation_date
+            )
+        )
+        .slice(0, 5)
+        .map(
+          (quotation) => ({
+            id:
+              quotation.quotation_number ||
+              `QT-${quotation.id}`,
+
+            quotationId:
+              quotation.id,
+
+            currency:
+              getQuotationCurrency(
+                quotation,
+                currency
+              ),
+
+            client:
+              clientMap[
+                quotation.client_id
+              ] ||
+              quotation.client?.company_name ||
+              quotation.client?.contact_person ||
+              "Unknown Client",
+
+            amount: money(
+              quotation.grand_total
+            ),
+
+            date:
+              quotation.quotation_date,
+
+            validUntil:
+              quotation.valid_until,
+
+            email:
+              quotation.client?.email ||
+              "",
+          })
+        );
+    }, [
+      quotations,
+      clientMap,
+      currency,
+    ]);
 
   // ==========================================================
   // STATUS BADGE
   // ==========================================================
 
-  const getStatusBadge = (status) => {
+  const getStatusBadge = (
+    status
+  ) => {
     const statusMap = {
       paid: {
         variant: "success",
         label: "Paid",
       },
+
       partial: {
         variant: "warning",
         label: "Partial",
       },
+
       unpaid: {
         variant: "danger",
         label: "Unpaid",
       },
+
       draft: {
         variant: "neutral",
         label: "Draft",
       },
+
       cancelled: {
         variant: "neutral",
         label: "Cancelled",
@@ -957,7 +1328,11 @@ const Dashboard = () => {
       statusMap.unpaid;
 
     return (
-      <Badge variant={config.variant}>
+      <Badge
+        variant={
+          config.variant
+        }
+      >
         {config.label}
       </Badge>
     );
@@ -1025,6 +1400,7 @@ const Dashboard = () => {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
 
         <div className="min-w-0">
+
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 break-words">
             Welcome back,{" "}
             {user?.name?.split(" ")[0] ||
@@ -1035,6 +1411,7 @@ const Dashboard = () => {
             Here's what's happening with
             your business today.
           </p>
+
         </div>
 
         <div className="flex flex-col xs:flex-row sm:flex-row gap-2 sm:gap-3 w-full lg:w-auto">
@@ -1044,11 +1421,28 @@ const Dashboard = () => {
             leftIcon={
               <FiDownload size={18} />
             }
-            onClick={handleExportReport}
+            onClick={
+              handleExportReport
+            }
             className="w-full sm:w-auto justify-center"
           >
             Export Report
           </Button>
+
+          <Link
+            to="/quotation/create"
+            className="w-full sm:w-auto"
+          >
+            <Button
+              variant="secondary"
+              leftIcon={
+                <FiFile size={18} />
+              }
+              className="w-full sm:w-auto justify-center"
+            >
+              New Quotation
+            </Button>
+          </Link>
 
           <Link
             to="/invoices/create"
@@ -1071,7 +1465,7 @@ const Dashboard = () => {
           STATS
       ====================================================== */}
 
-      <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
 
         {stats.map(
           (stat, index) => (
@@ -1095,6 +1489,7 @@ const Dashboard = () => {
                 hover
                 className="relative overflow-hidden h-full"
               >
+
                 <div className="flex items-start justify-between gap-2 sm:gap-3">
 
                   <div className="min-w-0 flex-1">
@@ -1104,18 +1499,20 @@ const Dashboard = () => {
                     </p>
 
                     <h3 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-gray-100 break-words">
+
                       {typeof stat.value ===
-                        "number"
+                      "number"
                         ? stat.title.includes(
-                          "Amount"
-                        ) ||
+                            "Amount"
+                          ) ||
                           stat.title ===
-                          "Total Revenue"
+                            "Total Revenue"
                           ? formatCurrency(
-                            stat.value
-                          )
+                              stat.value
+                            )
                           : stat.value.toLocaleString()
                         : stat.value}
+
                     </h3>
 
                   </div>
@@ -1130,6 +1527,7 @@ const Dashboard = () => {
                   </div>
 
                 </div>
+
               </Card>
             </motion.div>
           )
@@ -1148,6 +1546,7 @@ const Dashboard = () => {
         <Card className="lg:col-span-2 min-w-0">
 
           <Card.Header>
+
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 w-full">
 
               <Card.Title>
@@ -1155,7 +1554,9 @@ const Dashboard = () => {
               </Card.Title>
 
               <select
-                value={revenuePeriod}
+                value={
+                  revenuePeriod
+                }
                 onChange={(e) =>
                   setRevenuePeriod(
                     e.target.value
@@ -1163,6 +1564,7 @@ const Dashboard = () => {
                 }
                 className="w-full sm:w-auto text-sm border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 bg-white dark:bg-dark-card text-gray-700 dark:text-gray-300"
               >
+
                 <option>
                   Last 6 months
                 </option>
@@ -1174,9 +1576,11 @@ const Dashboard = () => {
                 <option>
                   All time
                 </option>
+
               </select>
 
             </div>
+
           </Card.Header>
 
           <div className="h-56 sm:h-64 md:h-72 w-full min-w-0">
@@ -1185,8 +1589,11 @@ const Dashboard = () => {
               width="100%"
               height="100%"
             >
+
               <BarChart
-                data={revenueData}
+                data={
+                  revenueData
+                }
                 margin={{
                   top: 10,
                   right: 5,
@@ -1194,6 +1601,7 @@ const Dashboard = () => {
                   bottom: 0,
                 }}
               >
+
                 <CartesianGrid
                   strokeDasharray="3 3"
                   vertical={false}
@@ -1218,7 +1626,9 @@ const Dashboard = () => {
                     fill: "#64748B",
                     fontSize: 11,
                   }}
-                  tickFormatter={(value) =>
+                  tickFormatter={(
+                    value
+                  ) =>
                     value >= 1000
                       ? `${value / 1000}k`
                       : value
@@ -1244,10 +1654,13 @@ const Dashboard = () => {
                   barSize={28}
                   maxBarSize={40}
                 />
+
               </BarChart>
+
             </ResponsiveContainer>
 
           </div>
+
         </Card>
 
         {/* STATUS */}
@@ -1263,11 +1676,12 @@ const Dashboard = () => {
           <div className="h-56 sm:h-64 md:h-52 w-full min-w-0">
 
             {invoiceStatusData.length >
-              0 ? (
+            0 ? (
               <ResponsiveContainer
                 width="100%"
                 height="100%"
               >
+
                 <PieChart>
 
                   <Pie
@@ -1281,6 +1695,7 @@ const Dashboard = () => {
                     paddingAngle={4}
                     dataKey="value"
                   >
+
                     {invoiceStatusData.map(
                       (
                         entry,
@@ -1294,6 +1709,7 @@ const Dashboard = () => {
                         />
                       )
                     )}
+
                   </Pie>
 
                   <Tooltip />
@@ -1322,6 +1738,7 @@ const Dashboard = () => {
                   />
 
                 </PieChart>
+
               </ResponsiveContainer>
             ) : (
               <div className="h-full flex items-center justify-center">
@@ -1332,21 +1749,23 @@ const Dashboard = () => {
             )}
 
           </div>
+
         </Card>
 
       </div>
 
       {/* ======================================================
-          RECENT INVOICES + ACTIVITY
+          RECENT INVOICES + RECENT QUOTATIONS
       ====================================================== */}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
 
         {/* RECENT INVOICES */}
 
-        <Card className="lg:col-span-2 min-w-0">
+        <Card className="min-w-0">
 
           <Card.Header>
+
             <div className="flex items-center justify-between gap-3 w-full">
 
               <Card.Title>
@@ -1361,10 +1780,11 @@ const Dashboard = () => {
               </Link>
 
             </div>
+
           </Card.Header>
 
           {recentInvoices.length ===
-            0 ? (
+          0 ? (
             <div className="py-10 text-center">
               <p className="text-gray-500">
                 No invoices yet.
@@ -1372,9 +1792,11 @@ const Dashboard = () => {
             </div>
           ) : (
             <div className="overflow-x-auto -mx-1 px-1">
-              <table className="w-full min-w-[650px]">
+
+              <table className="w-full min-w-[600px]">
 
                 <thead>
+
                   <tr className="border-b border-gray-100 dark:border-gray-800">
 
                     <th className="text-left py-3 px-3 sm:px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -1393,14 +1815,12 @@ const Dashboard = () => {
                       Status
                     </th>
 
-                    <th className="text-left py-3 px-3 sm:px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Date
-                    </th>
-
                   </tr>
+
                 </thead>
 
                 <tbody>
+
                   {recentInvoices.map(
                     (invoice) => (
                       <tr
@@ -1411,141 +1831,377 @@ const Dashboard = () => {
                       >
 
                         <td className="py-3 px-3 sm:px-4">
+
                           <Link
                             to={`/invoices/${invoice.invoiceId}`}
                             className="text-sm font-medium text-primary hover:text-primary-dark whitespace-nowrap"
                           >
-                            {getCurrencySymbol(invoice.currency)}{" "}
-                            {invoice.id}
+                            {
+                              invoice.id
+                            }
                           </Link>
+
                         </td>
 
-                        <td className="py-3 px-3 sm:px-4 text-sm text-gray-700 dark:text-gray-300 max-w-[180px]">
+                        <td className="py-3 px-3 sm:px-4 text-sm text-gray-700 dark:text-gray-300 max-w-[160px]">
+
                           <span className="block truncate">
                             {
                               invoice.client
                             }
                           </span>
+
                         </td>
 
                         <td className="py-3 px-3 sm:px-4 text-sm font-medium text-gray-900 dark:text-gray-100 whitespace-nowrap">
+
                           {formatCurrency(
                             invoice.amount,
                             invoice.currency
                           )}
+
                         </td>
 
                         <td className="py-3 px-3 sm:px-4">
+
                           {getStatusBadge(
                             invoice.status
                           )}
-                        </td>
 
-                        <td className="py-3 px-3 sm:px-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                          {invoice.date
-                            ? new Date(
-                              invoice.date
-                            ).toLocaleDateString(
-                              "en-IN"
-                            )
-                            : "-"}
                         </td>
 
                       </tr>
                     )
                   )}
+
                 </tbody>
 
               </table>
+
             </div>
           )}
+
         </Card>
 
-        {/* RECENT ACTIVITY */}
+        {/* RECENT QUOTATIONS */}
 
         <Card className="min-w-0">
 
           <Card.Header>
-            <Card.Title>
-              Recent Activity
-            </Card.Title>
+
+            <div className="flex items-center justify-between gap-3 w-full">
+
+              <Card.Title>
+                Recent Quotations
+              </Card.Title>
+
+              <Link
+                to="/quotations"
+                className="text-xs sm:text-sm text-primary font-medium hover:text-primary-dark whitespace-nowrap"
+              >
+                View All
+              </Link>
+
+            </div>
+
           </Card.Header>
 
-          <div className="space-y-4">
+          {recentQuotations.length ===
+          0 ? (
+            <div className="py-10 text-center">
 
-            {recentInvoices
-              .slice(0, 5)
-              .map(
-                (invoice) => (
-                  <div
-                    key={
-                      invoice.invoiceId
-                    }
-                    className="flex items-start gap-3 min-w-0"
-                  >
+              <p className="text-gray-500">
+                No quotations yet.
+              </p>
 
-                    <div
-                      className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${invoice.status ===
-                        "paid"
-                        ? "bg-green-500"
-                        : invoice.status ===
-                          "partial"
-                          ? "bg-yellow-500"
-                          : "bg-blue-500"
-                        }`}
-                    />
+              <Link
+                to="/quotations/create"
+                className="inline-block mt-2 text-sm text-primary font-medium hover:text-primary-dark"
+              >
+                Create your first quotation
+              </Link>
 
-                    <div className="flex-1 min-w-0">
+            </div>
+          ) : (
+            <div className="overflow-x-auto -mx-1 px-1">
 
-                      <p className="text-sm text-gray-700 dark:text-gray-300 break-words">
+              <table className="w-full min-w-[600px]">
 
-                        Invoice{" "}
-                        <span className="font-medium">
-                          {
-                            invoice.id
-                          }
-                        </span>{" "}
-                        for{" "}
-                        <span className="break-words">
-                          {
-                            invoice.client
-                          }
-                        </span>
+                <thead>
 
-                      </p>
+                  <tr className="border-b border-gray-100 dark:border-gray-800">
 
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                        {invoice.date
-                          ? new Date(
-                            invoice.date
-                          ).toLocaleDateString(
-                            "en-IN"
-                          )
-                          : "-"}
-                      </p>
+                    <th className="text-left py-3 px-3 sm:px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Quotation
+                    </th>
 
-                    </div>
-                  </div>
-                )
-              )}
+                    <th className="text-left py-3 px-3 sm:px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Client
+                    </th>
 
-            {recentInvoices.length ===
-              0 && (
-                <p className="text-sm text-gray-500">
-                  No recent activity.
-                </p>
-              )}
+                    <th className="text-left py-3 px-3 sm:px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Amount
+                    </th>
 
-          </div>
+                    <th className="text-left py-3 px-3 sm:px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Date
+                    </th>
+
+                  </tr>
+
+                </thead>
+
+                <tbody>
+
+                  {recentQuotations.map(
+                    (quotation) => (
+                      <tr
+                        key={
+                          quotation.quotationId
+                        }
+                        className="border-b border-gray-50 dark:border-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                      >
+
+                        <td className="py-3 px-3 sm:px-4">
+
+                          <Link
+                            to={`/quotations/${quotation.quotationId}`}
+                            className="text-sm font-medium text-primary hover:text-primary-dark whitespace-nowrap"
+                          >
+                            {
+                              quotation.id
+                            }
+                          </Link>
+
+                        </td>
+
+                        <td className="py-3 px-3 sm:px-4 text-sm text-gray-700 dark:text-gray-300 max-w-[160px]">
+
+                          <span className="block truncate">
+                            {
+                              quotation.client
+                            }
+                          </span>
+
+                        </td>
+
+                        <td className="py-3 px-3 sm:px-4 text-sm font-medium text-gray-900 dark:text-gray-100 whitespace-nowrap">
+
+                          {formatCurrency(
+                            quotation.amount,
+                            quotation.currency
+                          )}
+
+                        </td>
+
+                        <td className="py-3 px-3 sm:px-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
+
+                          {quotation.date
+                            ? new Date(
+                                quotation.date
+                              ).toLocaleDateString(
+                                "en-IN"
+                              )
+                            : "-"}
+
+                        </td>
+
+                      </tr>
+                    )
+                  )}
+
+                </tbody>
+
+              </table>
+
+            </div>
+          )}
+
         </Card>
 
       </div>
 
       {/* ======================================================
+          RECENT ACTIVITY
+      ====================================================== */}
+
+      <Card className="min-w-0">
+
+        <Card.Header>
+          <Card.Title>
+            Recent Activity
+          </Card.Title>
+        </Card.Header>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+          {/* INVOICE ACTIVITY */}
+
+          <div>
+
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">
+              Invoices
+            </p>
+
+            <div className="space-y-4">
+
+              {recentInvoices
+                .slice(0, 5)
+                .map(
+                  (invoice) => (
+                    <div
+                      key={
+                        invoice.invoiceId
+                      }
+                      className="flex items-start gap-3 min-w-0"
+                    >
+
+                      <div
+                        className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${
+                          invoice.status ===
+                          "paid"
+                            ? "bg-green-500"
+                            : invoice.status ===
+                              "partial"
+                              ? "bg-yellow-500"
+                              : "bg-blue-500"
+                        }`}
+                      />
+
+                      <div className="flex-1 min-w-0">
+
+                        <p className="text-sm text-gray-700 dark:text-gray-300 break-words">
+
+                          Invoice{" "}
+
+                          <span className="font-medium">
+                            {
+                              invoice.id
+                            }
+                          </span>{" "}
+
+                          for{" "}
+
+                          <span className="break-words">
+                            {
+                              invoice.client
+                            }
+                          </span>
+
+                        </p>
+
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+
+                          {invoice.date
+                            ? new Date(
+                                invoice.date
+                              ).toLocaleDateString(
+                                "en-IN"
+                              )
+                            : "-"}
+
+                        </p>
+
+                      </div>
+
+                    </div>
+                  )
+                )}
+
+              {recentInvoices.length ===
+                0 && (
+                  <p className="text-sm text-gray-500">
+                    No recent invoice activity.
+                  </p>
+                )}
+
+            </div>
+
+          </div>
+
+          {/* QUOTATION ACTIVITY */}
+
+          <div>
+
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">
+              Quotations
+            </p>
+
+            <div className="space-y-4">
+
+              {recentQuotations
+                .slice(0, 5)
+                .map(
+                  (quotation) => (
+                    <div
+                      key={
+                        quotation.quotationId
+                      }
+                      className="flex items-start gap-3 min-w-0"
+                    >
+
+                      <div className="mt-1.5 w-2 h-2 rounded-full bg-purple-500 flex-shrink-0" />
+
+                      <div className="flex-1 min-w-0">
+
+                        <p className="text-sm text-gray-700 dark:text-gray-300 break-words">
+
+                          Quotation{" "}
+
+                          <span className="font-medium">
+                            {
+                              quotation.id
+                            }
+                          </span>{" "}
+
+                          for{" "}
+
+                          <span className="break-words">
+                            {
+                              quotation.client
+                            }
+                          </span>
+
+                        </p>
+
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+
+                          {quotation.date
+                            ? new Date(
+                                quotation.date
+                              ).toLocaleDateString(
+                                "en-IN"
+                              )
+                            : "-"}
+
+                        </p>
+
+                      </div>
+
+                    </div>
+                  )
+                )}
+
+              {recentQuotations.length ===
+                0 && (
+                  <p className="text-sm text-gray-500">
+                    No recent quotation activity.
+                  </p>
+                )}
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </Card>
+
+      {/* ======================================================
           QUICK ACTIONS
       ====================================================== */}
 
-      <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-5 gap-3 sm:gap-4">
 
         {/* VIEW INVOICES */}
 
@@ -1553,20 +2209,54 @@ const Dashboard = () => {
           to="/invoices"
           className="min-w-0"
         >
+
           <Card
             hover
             className="flex items-center gap-3 sm:gap-4 cursor-pointer group h-full"
           >
+
             <div className="p-2.5 sm:p-3 rounded-xl bg-gray-100 dark:bg-gray-800 group-hover:bg-primary group-hover:text-white transition-colors flex-shrink-0">
+
               <FiFileText
                 size={20}
               />
+
             </div>
 
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-primary transition-colors">
               View Invoices
             </span>
+
           </Card>
+
+        </Link>
+
+        {/* VIEW QUOTATIONS */}
+
+        <Link
+          to="/quotations"
+          className="min-w-0"
+        >
+
+          <Card
+            hover
+            className="flex items-center gap-3 sm:gap-4 cursor-pointer group h-full"
+          >
+
+            <div className="p-2.5 sm:p-3 rounded-xl bg-gray-100 dark:bg-gray-800 group-hover:bg-primary group-hover:text-white transition-colors flex-shrink-0">
+
+              <FiFile
+                size={20}
+              />
+
+            </div>
+
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-primary transition-colors">
+              View Quotations
+            </span>
+
+          </Card>
+
         </Link>
 
         {/* MANAGE CLIENTS */}
@@ -1575,18 +2265,26 @@ const Dashboard = () => {
           to="/clients"
           className="min-w-0"
         >
+
           <Card
             hover
             className="flex items-center gap-3 sm:gap-4 cursor-pointer group h-full"
           >
+
             <div className="p-2.5 sm:p-3 rounded-xl bg-gray-100 dark:bg-gray-800 group-hover:bg-primary group-hover:text-white transition-colors flex-shrink-0">
-              <FiUsers size={20} />
+
+              <FiUsers
+                size={20}
+              />
+
             </div>
 
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-primary transition-colors">
               Manage Clients
             </span>
+
           </Card>
+
         </Link>
 
         {/* SEND REMINDER */}
@@ -1594,29 +2292,50 @@ const Dashboard = () => {
         <button
           type="button"
           onClick={() => {
-            if (reminderInvoices.length === 0) {
-              error("There are no unpaid or partially paid invoices.");
+
+            if (
+              reminderInvoices.length ===
+              0
+            ) {
+              error(
+                "There are no unpaid or partially paid invoices."
+              );
               return;
             }
 
-            setSelectedReminderInvoices([]);
-            setSelectedReminderClient(null);
-            setShowReminderModal(true);
+            setSelectedReminderInvoices(
+              []
+            );
+
+            setSelectedReminderClient(
+              null
+            );
+
+            setShowReminderModal(
+              true
+            );
+
           }}
           className="text-left min-w-0 w-full"
         >
+
           <Card
             hover
             className="flex items-center gap-3 sm:gap-4 cursor-pointer group h-full"
           >
+
             <div className="p-2.5 sm:p-3 rounded-xl bg-gray-100 dark:bg-gray-800 group-hover:bg-primary group-hover:text-white transition-colors flex-shrink-0">
+
               <FiSend size={20} />
+
             </div>
 
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-primary transition-colors">
               Send Reminder
             </span>
+
           </Card>
+
         </button>
 
         {/* REPORTS */}
@@ -1625,24 +2344,36 @@ const Dashboard = () => {
           to="/reports"
           className="min-w-0"
         >
+
           <Card
             hover
             className="flex items-center gap-3 sm:gap-4 cursor-pointer group h-full"
           >
+
             <div className="p-2.5 sm:p-3 rounded-xl bg-gray-100 dark:bg-gray-800 group-hover:bg-primary group-hover:text-white transition-colors flex-shrink-0">
+
               <FiTrendingUp
                 size={20}
               />
+
             </div>
 
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-primary transition-colors">
               View Reports
             </span>
+
           </Card>
+
         </Link>
 
       </div>
+
+      {/* ======================================================
+          PAYMENT REMINDER MODAL
+      ====================================================== */}
+
       {showReminderModal && (
+
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
 
           <div className="w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-2xl bg-white dark:bg-dark-card shadow-2xl">
@@ -1656,7 +2387,9 @@ const Dashboard = () => {
               {selectedReminderClient && (
                 <button
                   type="button"
-                  onClick={goBackToReminderClients}
+                  onClick={
+                    goBackToReminderClients
+                  }
                   className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
                 >
                   ←
@@ -1666,16 +2399,18 @@ const Dashboard = () => {
               <div className="flex-1">
 
                 <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-gray-100">
+
                   {selectedReminderClient
                     ? selectedReminderClient.clientName
                     : "Send Payment Reminders"}
+
                 </h2>
 
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
 
                   {selectedReminderClient
                     ? selectedReminderClient.email ||
-                    "No email address"
+                      "No email address"
                     : "Select a client to view their outstanding invoices."}
 
                 </p>
@@ -1684,18 +2419,35 @@ const Dashboard = () => {
 
               <button
                 type="button"
-                disabled={sendingReminders}
+                disabled={
+                  sendingReminders
+                }
                 onClick={() => {
-                  if (sendingReminders) return;
 
-                  setShowReminderModal(false);
-                  setSelectedReminderClient(null);
-                  setSelectedReminderInvoices([]);
+                  if (
+                    sendingReminders
+                  ) {
+                    return;
+                  }
+
+                  setShowReminderModal(
+                    false
+                  );
+
+                  setSelectedReminderClient(
+                    null
+                  );
+
+                  setSelectedReminderInvoices(
+                    []
+                  );
+
                 }}
-                className={`text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl ${sendingReminders
+                className={`text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl ${
+                  sendingReminders
                     ? "opacity-50 cursor-not-allowed"
                     : ""
-                  }`}
+                }`}
               >
                 ×
               </button>
@@ -1725,9 +2477,10 @@ const Dashboard = () => {
                       <input
                         type="checkbox"
                         checked={
-                          reminderInvoices.length > 0 &&
+                          reminderInvoices.length >
+                            0 &&
                           selectedReminderInvoices.length ===
-                          reminderInvoices.length
+                            reminderInvoices.length
                         }
                         onChange={
                           toggleSelectAllReminders
@@ -1742,10 +2495,14 @@ const Dashboard = () => {
                     </label>
 
                     <span className="text-sm text-gray-500 dark:text-gray-400">
-                      {reminderClients.length} client
-                      {reminderClients.length !== 1
+
+                      {reminderClients.length}{" "}
+                      client
+                      {reminderClients.length !==
+                      1
                         ? "s"
                         : ""}
+
                     </span>
 
                   </div>
@@ -1773,16 +2530,20 @@ const Dashboard = () => {
 
                         const clientFullySelected =
                           selectedCount ===
-                          clientInvoiceIds.length &&
-                          clientInvoiceIds.length > 0;
+                            clientInvoiceIds.length &&
+                          clientInvoiceIds.length >
+                            0;
 
                         return (
                           <div
-                            key={client.clientId}
-                            className={`p-4 rounded-xl border transition-all ${clientFullySelected
-                              ? "border-primary bg-primary/5"
-                              : "border-gray-200 dark:border-gray-700"
-                              }`}
+                            key={
+                              client.clientId
+                            }
+                            className={`p-4 rounded-xl border transition-all ${
+                              clientFullySelected
+                                ? "border-primary bg-primary/5"
+                                : "border-gray-200 dark:border-gray-700"
+                            }`}
                           >
 
                             <div className="flex items-center gap-3">
@@ -1825,8 +2586,10 @@ const Dashboard = () => {
                                     </p>
 
                                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                                      {client.email ||
-                                        "No email address"}
+                                      {
+                                        client.email ||
+                                        "No email address"
+                                      }
                                     </p>
 
                                   </div>
@@ -1845,11 +2608,13 @@ const Dashboard = () => {
                                           .length
                                       }{" "}
                                       outstanding invoice
-                                      {client.invoices
-                                        .length !==
+                                      {
+                                        client.invoices
+                                          .length !==
                                         1
-                                        ? "s"
-                                        : ""}
+                                          ? "s"
+                                          : ""
+                                      }
                                     </p>
 
                                   </div>
@@ -1876,10 +2641,12 @@ const Dashboard = () => {
 
                             {/* SELECTED INFO */}
 
-                            {selectedCount > 0 && (
+                            {selectedCount >
+                              0 && (
                               <div className="mt-3 ml-7 text-xs text-primary">
 
-                                {selectedCount} of{" "}
+                                {selectedCount}{" "}
+                                of{" "}
                                 {
                                   client.invoices
                                     .length
@@ -1957,14 +2724,12 @@ const Dashboard = () => {
 
                       <input
                         type="checkbox"
-                        checked={
-                          selectedReminderClient.invoices.every(
-                            (invoice) =>
-                              selectedReminderInvoices.includes(
-                                invoice.reminderId
-                              )
-                          )
-                        }
+                        checked={selectedReminderClient.invoices.every(
+                          (invoice) =>
+                            selectedReminderInvoices.includes(
+                              invoice.reminderId
+                            )
+                        )}
                         onChange={() =>
                           toggleClientInvoices(
                             selectedReminderClient
@@ -1980,11 +2745,13 @@ const Dashboard = () => {
                     </label>
 
                     <span className="text-sm text-gray-500">
+
                       {
                         selectedReminderClient
                           .invoices.length
                       }{" "}
                       invoices
+
                     </span>
 
                   </div>
@@ -2003,23 +2770,28 @@ const Dashboard = () => {
 
                         return (
                           <div
-                            key={invoice.reminderId}
+                            key={
+                              invoice.reminderId
+                            }
                             onClick={() =>
                               toggleReminderInvoice(
                                 invoice.reminderId
                               )
                             }
-                            className={`p-4 rounded-xl border cursor-pointer transition-all ${selected
-                              ? "border-primary bg-primary/5"
-                              : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
-                              }`}
+                            className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                              selected
+                                ? "border-primary bg-primary/5"
+                                : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+                            }`}
                           >
 
                             <div className="flex items-start gap-3">
 
                               <input
                                 type="checkbox"
-                                checked={selected}
+                                checked={
+                                  selected
+                                }
                                 onChange={() =>
                                   toggleReminderInvoice(
                                     invoice.reminderId
@@ -2044,15 +2816,17 @@ const Dashboard = () => {
                                   <Badge
                                     variant={
                                       invoice.reminderStatus ===
-                                        "partial"
+                                      "partial"
                                         ? "warning"
                                         : "danger"
                                     }
                                   >
+
                                     {invoice.reminderStatus ===
-                                      "partial"
+                                    "partial"
                                       ? "Partial"
                                       : "Unpaid"}
+
                                   </Badge>
 
                                 </div>
@@ -2060,6 +2834,7 @@ const Dashboard = () => {
                                 <div className="grid grid-cols-3 gap-3 mt-4">
 
                                   <div>
+
                                     <p className="text-xs text-gray-500">
                                       Total
                                     </p>
@@ -2070,9 +2845,11 @@ const Dashboard = () => {
                                         invoice.reminderCurrency
                                       )}
                                     </p>
+
                                   </div>
 
                                   <div>
+
                                     <p className="text-xs text-gray-500">
                                       Paid
                                     </p>
@@ -2083,9 +2860,11 @@ const Dashboard = () => {
                                         invoice.reminderCurrency
                                       )}
                                     </p>
+
                                   </div>
 
                                   <div>
+
                                     <p className="text-xs text-gray-500">
                                       Pending
                                     </p>
@@ -2096,6 +2875,7 @@ const Dashboard = () => {
                                         invoice.reminderCurrency
                                       )}
                                     </p>
+
                                   </div>
 
                                 </div>
@@ -2157,11 +2937,23 @@ const Dashboard = () => {
 
                   <Button
                     variant="secondary"
-                    disabled={sendingReminders}
+                    disabled={
+                      sendingReminders
+                    }
                     onClick={() => {
-                      setShowReminderModal(false);
-                      setSelectedReminderClient(null);
-                      setSelectedReminderInvoices([]);
+
+                      setShowReminderModal(
+                        false
+                      );
+
+                      setSelectedReminderClient(
+                        null
+                      );
+
+                      setSelectedReminderInvoices(
+                        []
+                      );
+
                     }}
                   >
                     Cancel
@@ -2172,12 +2964,17 @@ const Dashboard = () => {
                       sendingReminders ? (
                         <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                       ) : (
-                        <FiSend size={16} />
+                        <FiSend
+                          size={16}
+                        />
                       )
                     }
-                    onClick={handleSendReminder}
+                    onClick={
+                      handleSendReminder
+                    }
                     disabled={
-                      selectedReminderInvoices.length === 0 ||
+                      selectedReminderInvoices.length ===
+                        0 ||
                       sendingReminders
                     }
                   >
@@ -2195,6 +2992,7 @@ const Dashboard = () => {
           </div>
 
         </div>
+
       )}
 
     </div>
