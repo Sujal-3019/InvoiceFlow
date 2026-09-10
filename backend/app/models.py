@@ -274,6 +274,22 @@ class Company(Base):
     )
 
     # ========================================================
+    # QUOTATION NUMBERING
+    # ========================================================
+
+    quotation_prefix = Column(
+        String,
+        nullable=True,
+        default="QT-",
+    )
+
+    quotation_starting_number = Column(
+        Integer,
+        nullable=True,
+        default=1001,
+    )
+
+    # ========================================================
     # INVOICE DEFAULTS
     # ========================================================
 
@@ -325,6 +341,13 @@ class Company(Base):
 
     invoices = relationship(
         "Invoice",
+        back_populates="company",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    quotations = relationship(
+        "Quotation",
         back_populates="company",
         cascade="all, delete-orphan",
         passive_deletes=True,
@@ -412,6 +435,10 @@ class Client(Base):
         back_populates="client",
     )
 
+    quotations = relationship(
+        "Quotation",
+        back_populates="client",
+    )
 
 # ============================================================
 # PRODUCT
@@ -488,6 +515,11 @@ class Product(Base):
 
     invoice_items = relationship(
         "InvoiceItem",
+        back_populates="product",
+    )
+
+    quotation_items = relationship(
+        "QuotationItem",
         back_populates="product",
     )
 
@@ -825,6 +857,316 @@ class InvoiceItem(Base):
     product = relationship(
         "Product",
         back_populates="invoice_items",
+    )
+
+# ============================================================
+# QUOTATION
+# ============================================================
+
+class Quotation(Base):
+    __tablename__ = "quotations"
+
+    # ========================================================
+    # TABLE CONSTRAINTS
+    # ========================================================
+
+    __table_args__ = (
+        UniqueConstraint(
+            "company_id",
+            "quotation_number",
+            name="uq_company_quotation_number",
+        ),
+    )
+
+    # ========================================================
+    # PRIMARY KEY
+    # ========================================================
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    # ========================================================
+    # COMPANY OWNERSHIP
+    # ========================================================
+
+    company_id = Column(
+        Integer,
+        ForeignKey(
+            "companies.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    # ========================================================
+    # CLIENT
+    # ========================================================
+
+    client_id = Column(
+        Integer,
+        ForeignKey(
+            "clients.id",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    # ========================================================
+    # QUOTATION INFORMATION
+    # ========================================================
+
+    quotation_number = Column(
+        String,
+        nullable=False,
+        index=True,
+    )
+
+    quotation_date = Column(
+        Date,
+        nullable=False,
+    )
+
+    valid_until = Column(
+        Date,
+        nullable=True,
+    )
+
+    currency = Column(
+        String(3),
+        nullable=False,
+        default="INR",
+    )
+
+    # ========================================================
+    # LOGO SNAPSHOT REFERENCE
+    # ========================================================
+
+    logo_url = Column(
+        String(500),
+        nullable=True,
+    )
+
+    # ========================================================
+    # FINANCIAL TOTALS
+    # ========================================================
+
+    subtotal = Column(
+        Numeric(
+            12,
+            2,
+        ),
+        nullable=False,
+        default=0,
+    )
+
+    discount = Column(
+        Numeric(
+            12,
+            2,
+        ),
+        nullable=False,
+        default=0,
+    )
+
+    tax_amount = Column(
+        Numeric(
+            12,
+            2,
+        ),
+        nullable=False,
+        default=0,
+    )
+
+    grand_total = Column(
+        Numeric(
+            12,
+            2,
+        ),
+        nullable=False,
+        default=0,
+    )
+
+    # ========================================================
+    # NOTES
+    # ========================================================
+
+    notes = Column(
+        Text,
+        nullable=True,
+    )
+
+    # ========================================================
+    # TERMS
+    # ========================================================
+
+    terms = Column(
+        Text,
+        nullable=True,
+    )
+
+    # ========================================================
+    # STORED PDF SNAPSHOT
+    # ========================================================
+
+    pdf_data = Column(
+        LargeBinary,
+        nullable=True,
+    )
+
+    pdf_filename = Column(
+        String(255),
+        nullable=True,
+    )
+
+    pdf_generated_at = Column(
+        DateTime,
+        nullable=True,
+    )
+
+    # ========================================================
+    # RELATIONSHIPS
+    # ========================================================
+
+    company = relationship(
+        "Company",
+        back_populates="quotations",
+    )
+
+    client = relationship(
+        "Client",
+        back_populates="quotations",
+    )
+
+    items = relationship(
+        "QuotationItem",
+        back_populates="quotation",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+# ============================================================
+# QUOTATION ITEM
+# ============================================================
+
+class QuotationItem(Base):
+    __tablename__ = "quotation_items"
+
+    # ========================================================
+    # PRIMARY KEY
+    # ========================================================
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    # ========================================================
+    # QUOTATION RELATIONSHIP
+    # ========================================================
+
+    quotation_id = Column(
+        Integer,
+        ForeignKey(
+            "quotations.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    # ========================================================
+    # PRODUCT RELATIONSHIP
+    # ========================================================
+
+    product_id = Column(
+        Integer,
+        ForeignKey(
+            "products.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+        index=True,
+    )
+
+    # ========================================================
+    # HISTORICAL ITEM INFORMATION
+    # ========================================================
+
+    product_name = Column(
+        String,
+        nullable=True,
+    )
+
+    name = Column(
+        String,
+        nullable=False,
+    )
+
+    description = Column(
+        Text,
+        nullable=True,
+    )
+
+    quantity = Column(
+        Numeric(
+            12,
+            2,
+        ),
+        nullable=False,
+        default=1,
+    )
+
+    unit_price = Column(
+        Numeric(
+            12,
+            2,
+        ),
+        nullable=False,
+    )
+
+    gst_percent = Column(
+        Numeric(
+            5,
+            2,
+        ),
+        nullable=False,
+        default=0,
+    )
+
+    tax_amount = Column(
+        Numeric(
+            12,
+            2,
+        ),
+        nullable=False,
+    )
+
+    line_total = Column(
+        Numeric(
+            12,
+            2,
+        ),
+        nullable=False,
+    )
+
+    # ========================================================
+    # RELATIONSHIPS
+    # ========================================================
+
+    quotation = relationship(
+        "Quotation",
+        back_populates="items",
+    )
+
+    product = relationship(
+        "Product",
+        back_populates="quotation_items",
     )
 
 # ============================================================
