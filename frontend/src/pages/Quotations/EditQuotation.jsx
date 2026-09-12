@@ -121,6 +121,18 @@ const getProductName = (product) => {
   );
 };
 
+const getProductDescription = (product) => {
+  if (!product) {
+    return "";
+  }
+
+  return firstValue(
+    product.description,
+    product.product_description,
+    product.productDescription
+  );
+};
+
 const getProductPrice = (product) => {
   if (!product) {
     return 0;
@@ -202,6 +214,14 @@ const normalizeItem = (item, index = 0) => {
     "Item"
   );
 
+  const productDescription = firstValue(
+    item?.description,
+    item?.product_description,
+    item?.productDescription,
+    item?.product?.description,
+    ""
+  );
+
   return {
     id:
       item?.id ||
@@ -210,6 +230,8 @@ const normalizeItem = (item, index = 0) => {
     productId,
 
     productName,
+
+    productDescription,
 
     quantity: quantity > 0 ? quantity : 1,
 
@@ -602,6 +624,9 @@ const EditQuotation = () => {
           productName:
             getProductName(product),
 
+          productDescription:
+            getProductDescription(product),
+
           unitPrice:
             getProductPrice(product),
 
@@ -747,14 +772,14 @@ const EditQuotation = () => {
         const itemDiscount =
           subtotal > 0
             ? (itemSubtotal / subtotal) *
-              discountValue
+            discountValue
             : 0;
 
         const itemTaxableAmount =
           Math.max(
             0,
             itemSubtotal -
-              itemDiscount
+            itemDiscount
           );
 
         const itemTax =
@@ -1342,17 +1367,23 @@ const EditQuotation = () => {
                                 value={product.id}
                               >
                                 {isSelected &&
-                                item.productName
+                                  item.productName
                                   ? item.productName
                                   : getProductName(
-                                      product
-                                    )}
+                                    product
+                                  )}
                               </option>
                             );
                           }
                         )}
 
                       </select>
+
+                      {item.productDescription && (
+                        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 leading-4 max-w-[300px]">
+                          {item.productDescription}
+                        </p>
+                      )}
 
                     </td>
 
