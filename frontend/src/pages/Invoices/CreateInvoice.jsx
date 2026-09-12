@@ -516,19 +516,29 @@ const CreateInvoice = () => {
     return client?.email || '';
   };
 
-  const getProductName = (item) => {
+  const getProduct = (item) => {
     if (!item?.productId) {
-      return 'Product';
+      return null;
     }
 
-    const product = products.find(
+    return products.find(
       (product) =>
-        String(product.id) ===
-        String(item.productId)
+        String(product.id) === String(item.productId)
     );
+  };
+
+  const getProductName = (item) => {
+    const product = getProduct(item);
 
     return product?.name || 'Product';
   };
+
+  const getProductDescription = (item) => {
+    const product = getProduct(item);
+
+    return product?.description || '';
+  };
+
 
 
 
@@ -866,9 +876,14 @@ const CreateInvoice = () => {
    PRODUCT DROPDOWN
 ========================================================= */
 
-  const filteredProducts = products.filter((product) =>
-    product.name.toLowerCase().includes(productSearch.toLowerCase())
-  );
+  const filteredProducts = products.filter((product) => {
+    const search = productSearch.toLowerCase();
+
+    return (
+      product.name?.toLowerCase().includes(search) ||
+      product.description?.toLowerCase().includes(search)
+    );
+  });
 
   const openAddProductModal = (itemId) => {
     setActiveItemId(itemId);
@@ -2255,13 +2270,21 @@ const CreateInvoice = () => {
                                   showProductDropdown === item.id ? null : item.id
                                 );
                               }}
-                              className="w-full h-[42px] px-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 flex items-center justify-between text-left"
+                              className="w-full min-h-[52px] px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 flex items-center justify-between text-left"
                             >
-                              <span className="truncate">
-                                {products.find(
-                                  (p) => String(p.id) === String(item.productId)
-                                )?.name || 'Select product'}
-                              </span>
+                              <div className="min-w-0">
+                                <p className="font-medium truncate">
+                                  {getProductName(item) === 'Product'
+                                    ? 'Select product'
+                                    : getProductName(item)}
+                                </p>
+
+                                {getProductDescription(item) && (
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                                    {getProductDescription(item)}
+                                  </p>
+                                )}
+                              </div>
 
                               <FiChevronDown size={16} />
                             </button>
@@ -2315,16 +2338,25 @@ const CreateInvoice = () => {
                                         className="w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 flex justify-between"
                                       >
                                         <div>
-                                          <p className="font-medium">
-                                            {product.name}
-                                          </p>
-                                          <p className="text-xs text-gray-500 mt-1">
-                                            {formatCurrency(
-                                              Number(product.price),
-                                              formData.currency
-                                            )}{' '}
-                                            • {product.gst_percent}% GST
-                                          </p>
+                                          <div className="min-w-0">
+                                            <p className="font-medium text-gray-900 dark:text-gray-100">
+                                              {product.name}
+                                            </p>
+
+                                            {product.description && (
+                                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
+                                                {product.description}
+                                              </p>
+                                            )}
+
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                              {formatCurrency(
+                                                Number(product.price),
+                                                formData.currency
+                                              )}{' '}
+                                              • {product.gst_percent}% GST
+                                            </p>
+                                          </div>
                                         </div>
 
                                         {String(item.productId) ===
@@ -3058,22 +3090,26 @@ const CreateInvoice = () => {
 
                                 <div className="min-w-0">
 
-                                  <p className="text-xs font-medium truncate">
-                                    {getProductName(item)}
-                                  </p>
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-medium">
+                                      {getProductName(item)}
+                                    </p>
 
-
-                                  <p className="text-[10px] text-gray-400 mt-1">
-                                    {item.quantity}{' '}
-                                    ×{' '}
-                                    {formatCurrency(
-                                      Number(
-                                        item.unitPrice ||
-                                        0
-                                      ),
-                                      formData.currency
+                                    {getProductDescription(item) && (
+                                      <p className="text-[10px] text-gray-400 mt-1 leading-4">
+                                        {getProductDescription(item)}
+                                      </p>
                                     )}
-                                  </p>
+
+                                    <p className="text-[10px] text-gray-400 mt-1">
+                                      {item.quantity}{' '}
+                                      ×{' '}
+                                      {formatCurrency(
+                                        Number(item.unitPrice || 0),
+                                        formData.currency
+                                      )}
+                                    </p>
+                                  </div>
 
                                 </div>
 
@@ -3710,8 +3746,16 @@ const CreateInvoice = () => {
                         className="border-b border-gray-200"
                       >
 
-                        <td className="px-4 py-4 font-medium">
-                          {getProductName(item)}
+                        <td className="px-4 py-4">
+                          <p className="font-medium">
+                            {getProductName(item)}
+                          </p>
+
+                          {getProductDescription(item) && (
+                            <p className="text-xs text-gray-500 mt-1 leading-4">
+                              {getProductDescription(item)}
+                            </p>
+                          )}
                         </td>
 
 
