@@ -442,14 +442,17 @@ const normalizeItems = (invoice) => {
 
       description: firstValue(
         item.description,
-        item.name,
-        item.item_name,
-        item.title,
-        "Item"
+        item.product_description,
+        item.productDescription,
+        item.product?.description,
+        ""
       ),
+
       name: firstValue(
         item.name,
-        item.description,
+        item.product_name,
+        item.productName,
+        item.product?.name,
         item.item_name,
         item.title,
         "Item"
@@ -1191,8 +1194,8 @@ const InvoiceDetails = () => {
           {(
             paymentStatus.label === "Unpaid" ||
             paymentStatus.label === "Partially Paid"
-          ) && 
-          (
+          ) &&
+            (
               <Button
                 variant="secondary"
                 onClick={handleSendReminder}
@@ -1678,6 +1681,12 @@ const InvoiceDetails = () => {
                           <p className="font-medium text-gray-900 dark:text-gray-100">
                             {item.name}
                           </p>
+
+                          {item.description && (
+                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 leading-4 max-w-[350px]">
+                              {item.description}
+                            </p>
+                          )}
 
                         </td>
 
